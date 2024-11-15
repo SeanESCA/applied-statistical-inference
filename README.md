@@ -5,6 +5,7 @@
 ```{r nll_init}
 library(rlang)
 library(glue)
+library(latex2exp)
 
 deriv_pack = function(func_expr, 
                     namevec = c("theta1", "theta2", "theta3"),
