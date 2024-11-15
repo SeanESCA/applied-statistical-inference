@@ -1,0 +1,431 @@
+---
+title: 'MA40198: Applied Statistical Inference'
+subtitle: "Lab 5: Asymptotics in misspecified models"
+author: "Group 13: Sean Soon and Shaveen Colambage"
+output: html_document
+---
+
+\(\newcommand{\rel}{{\rm I\hspace{-0.7mm}R}}\)
+\(\newcommand{\bm}[1]{\boldsymbol{#1}}\)
+\(\newcommand{\bms}[1]{\boldsymbol{\scriptsize #1}}\)
+\(\newcommand{\proper}[1]{\text{#1}}\)
+\(\newcommand{\pE}{\proper{E}}\)
+\(\newcommand{\pV}{\proper{Var}}\)
+\(\newcommand{\pCov}{\proper{Cov}}\)
+\(\newcommand{\pACF}{\proper{ACF}}\)
+\(\newcommand{\I}{\bm{\mathcal{I}}}\)
+\(\newcommand{\wh}[1]{\widehat{#1}}\)
+\(\newcommand{\wt}[1]{\widetilde{#1}}\)
+\(\newcommand{\pP}{\proper{P}}\)
+\(\newcommand{\pAIC}{\textsf{AIC}}\)
+\(\DeclareMathOperator{\diag}{diag}\)
+
+[Go back to Moodle page](https://moodle.bath.ac.uk/course/view.php?id=1836&section=11)
+
+This lab is about reviewing all what we have seen so far in the course, as well as gaining understanding of the use of asymptotic theory of maximum likelihood when the assumed parametric family is wrong. 
+
+## Question 1 
+
+Let $\mathcal F$ be a parametric family of probability density functions  over the real line defined as follows:
+$$\mathcal F=\{f(y|\mu,\sigma,\delta,\tau)\,:\,\mu \in R,\,\sigma>0,\,\delta \in R,\,\tau>0\}\,.$$
+
+where
+
+$$
+f(y|\mu,\sigma,\delta,\tau)=\frac{\tau\,C(\frac{y-\mu}{\sigma};\delta,\tau)}{\sigma\,\sqrt{2\pi\,\left(1+\left(\frac{y-\mu}{\sigma}\right)^2\right)}}\,\exp\left(-\frac{S^2(\frac{y-\mu}{\sigma};\delta,\tau)}{2}\right) \,,\quad y\in \rel
+$$
+
+and
+
+$$
+\begin{split}
+S(z;\delta,\tau)&=\sinh(\tau \sinh^{-1}(z)-\delta)\\
+C(z;\delta,\tau)&=\cosh(\tau\sinh^{-1}(z)-\delta)=\sqrt{1+S^2(z;\delta,\tau)}
+\end{split}
+$$
+
+Here, $\sinh$ is the hyperbolic sine function and $\sinh^{-1}$ is the corresponding inverse function.
+
+Note that if $\tau =1$ and $\delta = 0$ then the parametric family $\mathcal F$ reduces to the family of normal distributions with mean $\mu$ and standard deviation $\sigma$.
+
+
+Note that $\sinh$ and $\sinh^{-1}$ can be computed in `R` using the  commands `sinh` and `asinh`, respectively. 
+`deriv` can differentiate `sinh` but (strangely) cannot differentiate `asinh`.
+You can use the following identity
+$$\sinh^{-1}(u) = \log\left(u+\sqrt{1+u^2}\right)$$
+to obtain the derivative of `asinh` using `deriv`.
+
+Consider the following observed sample $\boldsymbol{y}=(y_1,\ldots,y_n)^T$ 
+
+```{r}
+y_sample_q1<-
+  scan("http://people.bath.ac.uk/kai21/ASI/data/sample_q1_lab5.txt")
+```
+
+Assume that the observed sample `y_sample_q1` is a sample of  independent and identically distributed random variables following the probability density function $f_*(y)=f(y|\mu^*,\sigma^*,\delta^*,\tau^*)$ where $\mu^*$, $\sigma^*$, $\delta^*$ and $\tau^*$ are unknown parameters.
+
+ 
+
+Compute the maximum likelihood estimate of $\boldsymbol{\theta}^*=(\mu^*,\sigma^*,\delta^*,\tau^*)^T$ based on the observed sample `y_sample_q1`.
+
+### Solution for Question 1
+
+```{r nll_init}
+library(rlang)
+library(glue)
+
+nll_init = function(nll_expr, 
+                    namevec = c("theta1", "theta2", "theta3", "theta4"),
+                    data_arg_vec = c("y"),
+                    theta_init = 1:4 * 0,
+                    apply_sum = T) {
+  nll_deriv <- deriv(
+    nll_expr,
+    namevec = namevec,
+    function.arg = c(namevec, data_arg_vec)
+  )
+  
+  fn <- function(theta = theta_init, data_list = list("y" = 1), apply.sum = apply_sum, ...) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(nll_deriv, c(theta_list, data_list))
+    if(apply.sum) {
+      sum(as.numeric(aux))
+    } else {
+      c(aux)
+    } 
+  }
+  
+  gr <- function(theta = theta_init, data_list = list("y" = 1), apply.sum = apply_sum) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(nll_deriv, c(theta_list, data_list))
+    if(apply.sum) {
+      apply(attr(aux, "gradient"), 2, sum)
+    } else {
+      attr(aux, "gradient")
+    }
+  }
+  
+  list(fn = fn, gr = gr)
+}
+```
+
+```{r opt}
+opt = function(nll, par = rep(1, 4), data_list = list("y" = 1)) {
+  optim(par = par,
+        fn = nll$fn,
+        gr = nll$gr,
+        method = "BFGS",
+        hessian = TRUE,
+        data_list = data_list)
+}
+```
+
+```{r nll_expr}
+mu_expr = expr(theta1)
+sigma_expr = expr(exp(theta2))
+delta_expr = expr(theta3)
+tau_expr = expr(exp(theta4))
+expr1 = expr((y - !!mu_expr)/!!sigma_expr)
+asinh_expr = expr(log(!!expr1 + (1 + (!!expr1) ^ 2) ^ 0.5))
+S_expr = expr(sinh(!!tau_expr * !!asinh_expr - !!delta_expr))
+C_expr = expr((1 + (!!S_expr) ^ 2) ^ 0.5)
+nll_expr = expr(-log(!!tau_expr) - log(!!C_expr) + 0.5 * (!!S_expr) ^ 2 + log(!!sigma_expr) + 0.5 * log(2 * pi) + 0.5 * log(1 + (!!expr1) ^ 2))
+```
+
+```{r}
+nll_pack = nll_init(nll_expr)
+opt_res = opt(nll_pack, data_list = list(y = y_sample_q1))
+mu = opt_res$par[1]
+sigma = exp(opt_res$par[2])
+delta = opt_res$par[3]
+tau = exp(opt_res$par[4])
+print(glue("mu = {mu}"))
+print(glue("sigma = {sigma}"))
+print(glue("delta = {delta}"))
+print(glue("tau = {tau}"))
+```
+
+## Question 2 
+
+Compute asymptotic 95\% confidence intervals for both $\delta^*$ and $\tau^*$ (separately) based on the observed sample `y_sample_q1`.
+
+```{r delta_ci}
+S <- solve(opt_res$hessian)
+var_delta <- S[3, 3]
+c(delta - qnorm(0.975) * sqrt(var_delta), delta + qnorm(0.975) * sqrt(var_delta)) 
+```
+
+```{r tau_ci}
+c(exp(opt_res$par[4] - qnorm(0.975) * sqrt(S[4, 4])), 
+  exp(opt_res$par[4] + qnorm(0.975) * sqrt(S[4, 4]))) 
+```
+
+## Question 3 
+
+Let $\mathcal F_0$ be the set of probability density functions of normal distributions with unknown mean and unknown standard deviation. Test the hypotheses:
+$$H_0\,:\, f_*\in \mathcal F_0 \quad vs.\quad H_1\,:\,  f_*\in\mathcal F\setminus \mathcal F_0$$
+with an approximate significance level of $\alpha=0.05$.
+
+```{r}
+# Restrictions under null hypothesis: tau = 1, delta = 0
+mu_expr = expr(theta1)
+sigma_expr = expr(exp(theta2))
+expr1 = expr((y - !!mu_expr)/!!sigma_expr)
+nll_normal_expr = expr(log(!!sigma_expr) + 0.5 * log(2 * pi) + 0.5 * (!!expr1) ^ 2)
+
+nll_pack_normal = nll_init(nll_normal_expr,
+                           namevec = c("theta1", "theta2"),
+                           theta_init = c(1, 1))
+
+opt_res_normal = opt(nll_pack_normal, c(1, 1), data_list = list(y = y_sample_q1))
+test_stat = 2 * (opt_res_normal$value - opt_res$value)
+pchisq(test_stat, 2, lower.tail = F)
+```
+
+As $p < \alpha = 0.05$, we reject $H_{0}$. 
+
+## Question 4 
+
+Let $\hat{\boldsymbol{\theta}}_{[-i]}$ be the maximum likelihood estimator of $\boldsymbol{\theta}^*$ based on the sample `y_sample_q1` when the $i$-th observation is removed (e.g. of size $n-1$). Show numerically that :
+
+$$AIC(\mathcal F)=2(\phi(\wh{\boldsymbol{\theta}}|\boldsymbol{y})+p)\approx -2\,\sum_{i=1}^n \log f(y_i|\hat{\boldsymbol{\theta}}_{[-i]})$$ 
+
+by computing both sides of $\approx$. Here $p=4$ (number of estimated parameters) and the left hand side is a quantity that we will define later as the _Akaike information criterion_ which is a simple way to measure the predictive error based on the parametric family $\mathcal F$. 
+
+Given a set of candidate models $\mathcal F_1,\ldots,\mathcal F_k$ for the data, the preferred model is the one with the minimum AIC value.
+
+```{r}
+aic_actual = 2 * (opt_res$value + 4)
+aic_est_vec = 1:1000
+
+for(i in aic_est_vec) {
+  opt_res_aic = opt(nll_pack, data_list = list(y = y_sample_q1[-i]))
+  aic_est_vec[i] = nll_pack$fn(opt_res_aic$par, 
+                               data_list = list(y = y_sample_q1[i]))
+}
+
+print(glue("Actual AIC    = {aic_actual}"))
+print(glue("Estimated AIC = {2 * sum(aic_est_vec)}"))
+```
+
+## Question 5 
+
+Consider the following  data frame that contains a bivariate sample 
+$$(x_1,y_1),\,(x_2,y_2),\,\ldots,\,(x_n,y_n)$$
+of size $n=800$.
+
+```{r}
+data_q5<-
+  read.table("http://people.bath.ac.uk/kai21/ASI/data/data_q5_lab5.txt")
+```
+
+Use the parametric model $\mathcal F$ defined in Question 1 to find an appropriate model for the conditional distribution of $Y$ given $X$, that is $f_*(y|x)$.
+Try different parametric models (in particular different $\boldsymbol{\mu}(\bm{\theta}^{(1)},\bm{x})$) and select the best model based on the Akaike information criterion.    
+
+```{r generate_polynomial_str_vec}
+generate_polynomial_str_vec = function(n = 0) {
+  expr_str_i <-"theta0"
+  expr_str_vec <- 1 : (n + 1)
+  expr_str_vec[1] <- expr_str_i
+  if(n == 0) {
+    return(expr_str_vec)
+  }
+  for(i in 1:n) {
+    expr_str_i = glue("{expr_str_i} + theta{i} * x ^ {i}")
+    expr_str_vec[i + 1] = expr_str_i
+  }
+  expr_str_vec
+}
+```
+
+```{r nll_expr}
+mu_str_vec = generate_polynomial_str_vec(5)
+aic_vec = 1:length(mu_str_vec)
+
+for(i in aic_vec) {
+  mu_expr_q5 = parse_expr(mu_str_vec[i])
+  sigma_expr_q5 = parse_expr(glue("exp(theta{i})"))
+  delta_expr_q5 = parse_expr(glue("theta{i + 1}"))
+  tau_expr_q5 = parse_expr(glue("exp(theta{i + 2})"))
+  expr1_q5 = expr((y - !!mu_expr_q5)/!!sigma_expr_q5)
+  asinh_expr_q5 = expr(log(!!expr1_q5 + (1 + (!!expr1_q5) ^ 2) ^ 0.5))
+  S_expr_q5 = expr(sinh(!!tau_expr_q5 * !!asinh_expr_q5 - !!delta_expr_q5))
+  C_expr_q5 = expr((1 + (!!S_expr_q5) ^ 2) ^ 0.5)
+  nll_expr_q5 = expr(-log(!!tau_expr_q5) - log(!!C_expr_q5) + 0.5 * (!!S_expr_q5) ^ 2 + log(!!sigma_expr_q5) + 0.5 * log(2 * pi) + 0.5 * log(1 + (!!expr1_q5) ^ 2))
+  
+  namevec = 1:(i + 3)
+  for(j in namevec) {
+    namevec[j] = glue("theta{j - 1}")
+  }
+  
+  nll_pack_q5 = nll_init(nll_expr_q5, 
+                      namevec = namevec,
+                      data_arg_vec = c("x", "y"),
+                      theta_init = rep(1, length(namevec)))
+  opt_res_q5 = opt(nll_pack_q5, 
+                par = rep(1, length(namevec)), 
+                data_list = list(x = data_q5$x, y = data_q5$y))
+  aic_vec[i] = 2 * (opt_res$value + 4 + i)
+  
+}
+
+print(glue("Mu with the lowest AIC: {mu_str_vec[aic_vec == min(aic_vec)]} (AIC = {aic_vec[aic_vec == min(aic_vec)]})"))
+```
+
+## Question 6 
+
+If $f_*(\boldsymbol{y})\notin \mathcal F$ we cannot use [Theorem 3.1.](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/9/docs/02-likelihood.html#thm-main-MLE-results) to find the asymptotic distribution of the maximum likelihood estimator. We then have to use the following result (see [Section 3.7.1 in the Lecture notes](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/9/docs/02-likelihood.html#incorrectly-specified-models) for more details).
+
+Let $\widehat{\boldsymbol{\theta}}_n(\mathbfcal Y)$ be the maximum likelihood estimator  based on $\mathcal F$, then:
+
+$$
+\left\{
+\left(\wh{\mathbfcal J  }\,\right)^{1/2}
+\left(\wh{\mathbfcal K  }\,\right)^{-1/2}
+\left(\wh{\mathbfcal J  }\,\right)^{1/2}
+\right\}^{-1/2}
+(\wh{\boldsymbol{\theta}}_n(\mathbfcal Y)-\boldsymbol{\theta}^\dagger)
+\stackrel{d}{\to} N(\boldsymbol{0}_{p+m},\boldsymbol{I}_{p+m})\quad \mbox{as} \quad n\to \infty
+$$ 
+
+
+
+$$
+\wh{\mathbfcal K}=\sum_{i=1}^n\left[\nabla_{\!\boldsymbol{\theta}}\, \log f(y_i|\wh{\boldsymbol{\theta}})\right]\left[\nabla_{\!\boldsymbol{\theta}}\, \log f(y_i|\wh{\boldsymbol{\theta}})\right]^T
+$$ {#eq-estimator-sandwich-1}
+
+and
+
+$$
+\wh{\mathbfcal J  }=
+-\nabla^2_{\!\boldsymbol{\theta}}\, \ell(\wh{\boldsymbol{\theta}}|\boldsymbol{y})
+=\nabla^2_{\!\boldsymbol{\theta}}\, \phi(\wh{\boldsymbol{\theta}}|\boldsymbol{y})
+$$ {#eq-estimator-sandwich-2}
+
+Here $\boldsymbol{\theta}^\dagger$ is the vector that minimises
+
+$$
+KL(f(y|\boldsymbol{\theta}),f_*(y)) 
+=\pE_*\left[\log f_*(\mathcal Y) -\log f(\mathcal Y|\boldsymbol{\theta})\right]
+\int_{\rel}[\log f_*(y) -\log f(y|\boldsymbol{\theta})]f_*(y)dy
+$$
+
+as a function of $\boldsymbol{\theta}$.
+
+Assume that $f_*(y)$ is given by:
+
+$$
+f_*(y)=\frac{\exp(-y)}{(1+\exp(-y))^2}
+$$
+
+
+which corresponmds to a Logistic distribution with location parameter equal to 0 and scale parameter equal to one. 
+
+Generate a random sample of size of size $n=500$ from $f_*$ using the following code
+
+
+```{r}
+
+set.seed(314159)
+# you can fix the seed to have control over the randomness of the generated sample
+
+
+n <- 500
+
+y_sample_q6 <- rlogis(n,location = 0, scale= 1)
+```
+
+Compute the parameters that determine the asymptotic distribution of the maximum likelihood estimators $(\hat{\mu},\hat{\sigma},\hat{\delta},\hat{\nu})^T$ under the  model $\mathcal F$. You may want to use the following identity:
+
+$$
+\nabla_{\! \boldsymbol{\theta}}\,KL(f(y|\boldsymbol{\theta}),f_*(y)) =
+-\pE_*\left[\nabla_{\! \boldsymbol{\theta}} \log f(\mathcal Y|\boldsymbol{\theta})\right]=
+-\int_\rel \nabla_{\! \boldsymbol{\theta}} \log f(y|\boldsymbol{\theta})\,f_*(y)\,dy
+$$
+
+
+Also, you may want to use the `R` function `integrate` to perform numerical integration. See below for some examples of how to use it.
+
+```{r eval=FALSE}
+dens_norm <- function(x,mu,sigma){ (2*pi*sigma^2)^{-1/2}*exp(-((x-mu)^2)/(2*sigma^2))}
+```
+
+```{r eval=FALSE}
+integrate(dens_norm, -Inf, Inf,mu=0,sigma=1)
+integrate(function(x,mu,sigma) x*dens_norm(x,mu,sigma), -Inf, Inf,mu=0,sigma=1)
+integrate(dens_norm, -Inf, Inf,mu=3,sigma=1)   
+integrate(function(x,mu,sigma) x*dens_norm(x,mu,sigma), -Inf, Inf,mu=3,sigma=1)
+integrate(dens_norm, -Inf, Inf,mu=0,sigma=5)   
+integrate(function(x,mu,sigma) x^2*dens_norm(x,mu,sigma), -Inf, Inf,mu=0,sigma=5)
+```
+
+```{r}
+opt_res_q6 = opt(nll_pack, data_list = list(y = y_sample_q6))
+nll_gr_q6 = nll_pack$gr(theta = opt_res_q6$par, 
+                        data_list = list(y = y_sample_q6), 
+                        apply.sum = F)
+K_hat = t(nll_gr_q6) %*% nll_gr_q6
+J_hat = opt_res_q6$hessian
+var_mat_inv = J_hat %*% solve(K_hat) %*% J_hat
+```
+
+```{r KL}
+fy = function(y = 1) {
+  res = exp(-y)/(1 + exp(-y))^2
+  res[is.na(res)] = 0
+  res
+}
+log_fy = function(y = 1) -y - 2 * log(1 + exp(-y))
+KL_fn_no_int = function(y, theta = rep(1, 4)) {
+  res = (log_fy(y) + nll_pack$fn(
+          theta = theta, 
+          data_list = list("y" = y), 
+          apply.sum = F
+        )) * fy(y)
+  res[is.na(res)] = 0
+  res
+}
+KL_gr_no_int = function(y, theta = rep(1, 4), index = 1) {
+  res = nll_pack$gr(theta = theta, 
+                    data_list = list("y" = y), 
+                    apply.sum = F)[index] * fy(y)
+  res[is.na(res)] = 0
+  res
+}
+
+KL_fn = function(theta = rep(1, 4)) integrate(KL_fn_no_int,
+                                              -Inf, Inf,
+                                              theta = theta)$value
+KL_gr = function(theta = rep(1, 4)) {
+  gr_vec = 1:length(theta)
+  for(i in gr_vec) {
+    gr_vec[i] = integrate(KL_gr_no_int, -Inf, Inf,
+                          theta = theta, index = i)$value
+  }
+  gr_vec
+}
+```
+
+```{r}
+temp_mat = matrix(NA, nrow=100, ncol=9)
+for(i in 1:100) {
+  theta_init = rnorm(4)
+  temp_mat[i, 1:4] = theta_init
+  opt_res_KL = try(optim(par = theta_init,
+                   fn = KL_fn,
+                   gr = KL_gr,
+                   method = "BFGS",
+                   hessian = T))
+  if(inherits(opt_res_KL, "try-error")) {
+    next
+  }
+  temp_mat[i, 5:8] = opt_res_KL$par
+  temp_mat[i, 9] = opt_res_KL$value
+}
+```
+
+```{r}
+temp_mat[na.exclude(temp_mat[,9] == min(na.exclude(temp_mat[,9]))),]
+```

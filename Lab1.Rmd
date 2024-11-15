@@ -1,0 +1,493 @@
+---
+title: 'MA40198: Applied Statistical Inference'
+subtitle: "Lab 1: Minimisation using the method of Newton"
+author: "Group 13: Sean Soon and Shaveen Colambage"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+[Go back to Moodle page](https://moodle.bath.ac.uk/course/view.php?id=1836&section=11)
+
+This lab is about gaining understanding of simple line-search  optimisation methods, by coding up  Newton's method, in order to minimise negative loglikelihood functions with real data. 
+
+
+
+# Introduction
+
+## Question 1 
+
+The Rosenbrock's function does not correspond to any statistical model, it is simply a test function used in numerical optimisation and is given by:
+
+$$
+\phi(\boldsymbol{\theta}|a,b)=\phi(\theta_1,\theta_2|a,b) = a(\theta_2-\theta_1^2)^2 +(b-\theta_1)^2
+$$ 
+
+Note this function is _parametrised by_ `a` and `b` which are both scalars. Write an \mathbb{R} function called `rb2` which, for a given value of $\boldsymbol{\theta}^T=(\theta_1,\theta_2)$, returns a list of length 3 containing:
+
+* `f` the function value, 
+
+* `g` the [gradient vector](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/2/docs/06-prerequisites.html#def-gradient)  (vector of partial derivatives), and
+
+* `H` the [Hessian matrix](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/2/docs/06-prerequisites.html#def-Hessian) (matrix of second order derivatives)
+
+all evaluated at $\boldsymbol{\theta}$. 
+
+The following incomplete \mathbb{R} code will help you to do this task. You just need to replace `---` by the appropriate code.
+
+```{r,eval=FALSE}
+#| code-fold: show
+rb <- function(theta1=1,theta2=1,a=1,b=1) a*(theta2-theta1^2)^2+(b-theta1)^2
+
+rb2 <- function(theta=c(1,1),a=1,b=1){
+  
+  res  <- rb(theta1 = theta[1],
+             theta2 = theta[2],
+             a      = a,
+             b      = b)
+  
+  grad <- c( -- , -- )
+  
+  Hess <- matrix(c( --- , --- , --- , --- ),
+                 nrow  = 2,
+                 byrow = T)
+  
+  list(f = res,
+       g = grad,
+       H = Hess)
+  
+}
+```
+
+### **Solution:**
+
+```{r}
+rb <- function(theta1=1,theta2=1,a=1,b=1) a*(theta2-theta1^2)^2+(b-theta1)^2
+
+rb2 <- function(theta=c(1,1),a=1,b=1) {
+  
+  res  <- rb(theta1 = theta[1],
+             theta2 = theta[2],
+             a      = a,
+             b      = b)
+  
+  grad <- c(-4*a*theta[1]*(theta[2] - theta[1]^2) - 2*(b - theta[1]),
+            2*a*(theta[2] - theta[1]^2))
+  
+  Hess <- matrix(c(-(a*(4*theta[2] - 12*theta[1]^2) - 2), 
+                   -4*a*theta[1], 
+                   -4*a*theta[1], 
+                   2*a),
+                 nrow  = 2,
+                 byrow = T)
+  list(f = res,
+       g = grad,
+       H = Hess)
+  
+}
+```
+
+
+## Question 2
+
+Create vectors of length 100 of evenly spaced $\theta_1$ and $\theta_2$ values. Let $-1 \le \theta_1 \le 1.5$ and $-0.5 \le \theta_2 \le 1.5$.  Then create a matrix, `M`, whose element $i,j$ is $\phi(\theta_1^i,\theta_2^j|a,b)$, where $\theta_1^i$ and $\theta_2^j$ are elements $i$ and $j$ of the $\theta_1$, $\theta_2$ vectors created above.  Use the `contour` function to produce a contour plot of the Rosenbrock's function (with $a=10$ and $b=1$) for $-1 \le \theta_1 \le 1.5$, $-0.5 \le \theta_2 \le 1.5$. Use the `levels` argument of `contour` to set the contour levels to  `c(0.03,0.1,0.3,1,3,5,10,30)`. 
+
+The minimum of the Rosenbrook function when $a=10,b=1$ can be obtained analytically to be $(\theta_1,\theta_2)=(1,1)$ (where the function takes the value of 0) which can be seen clearly from the contour plot.
+
+The following incomplete \mathbb{R} code will help you to do this task. You just need to replace `---` by the appropriate code.
+
+```{r,eval=FALSE}
+#| code-fold: show
+theta1 <- seq(---,---,length=100)
+theta2 <- seq(---,---,length=100)
+
+M <- matrix(NA,
+          nrow = 100,
+          ncol = 100)
+
+for (i in seq_along(theta1)){
+  for (j in seq_along(theta2)){
+    
+    M[i,j]<-rb2(theta = c(---,---),
+                a     = --- ,
+                b     = ---)$---
+  }
+}
+
+
+lev <- --- 
+# you can change the contour levels accordingly to the values of a and b
+
+contour(x      = theta1,
+        y      = theta2,
+        z      = M,
+        levels = lev,
+        main   = "Contours of the Rosenbrook function a=10, b=1")
+
+abline(h=1,lty=2,lwd=0.5)
+abline(v=1,lty=2,lwd=0.5)
+points(c(1,1),pch=19)
+```
+
+
+### **Solution**
+
+```{r}
+theta1 <- seq(-1, 1.5, length=100)
+theta2 <- seq(-0.5, 1.5, length=100)
+
+M <- matrix(NA,
+          nrow = 100,
+          ncol = 100)
+
+for (i in seq_along(theta1)){
+  for (j in seq_along(theta2)){
+    M[i,j]<-rb2(theta = c(theta1[i],theta2[j]),
+                a     = 10 ,
+                b     = 1)$f
+  }
+}
+
+
+lev <- c(0.03,0.1,0.3,1,3,5,10,30) 
+# you can change the contour levels accordingly to the values of a and b
+
+contour(x      = theta1,
+        y      = theta2,
+        z      = M,
+        levels = lev,
+        main   = "Contours of the Rosenbrook function a=10, b=1")
+
+abline(h=1,lty=2,lwd=0.5)
+abline(v=1,lty=2,lwd=0.5)
+points(c(1,1),pch=19)
+```
+
+
+## Line-search ominimisation methods 
+
+For a given initial point $\boldsymbol{\theta}_0$. At the $k$-th iteration, a line search method computes: 
+
+* a search direction $\boldsymbol{\Delta}_k$ and then 
+* decides how far to move along that direction 
+
+The iteration is  given by:
+$$\boldsymbol{\theta}_{k+1}=\boldsymbol{\theta}_{k}+\alpha_k\,\boldsymbol{\Delta}_k \,,\quad k=0,1,2,\ldots$$
+where the scalar $\alpha_k$ is called the **step-length**. The search direction has the form:
+$$\boldsymbol{\Delta}_k=-\boldsymbol{B}_{k}\,\nabla_{\! \boldsymbol \theta}\, \phi(\boldsymbol{\theta}_{k})$$
+
+where 
+
+* $\nabla_{\! \boldsymbol \theta}\, \phi(\boldsymbol{\theta}_{k})$ is the gradient vector evaluated at $\boldsymbol{\theta}=\boldsymbol{\theta}_k$
+
+* $\boldsymbol{B}_{k}$ is a symmetric [positive definite matrix](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/2/docs/06-prerequisites.html#def-pos-definite-matrix) which  guarantees (as we will see in the lectures) that $\boldsymbol{\Delta}_k$ is a descent direction. An example is  Newton's direction: $\boldsymbol{B}_k=[\nabla^2_{\! \boldsymbol \theta} \phi(\boldsymbol{\theta}_{k})]^{-1}$ which is a descent direction when the Hessian $\nabla^2_{\! \boldsymbol \theta} \phi(\boldsymbol{\theta}_{k})$ is positive definite.
+
+*  For simplicity, we will set the step-length to the constant value of 1, that is $\alpha_k=1$ for all $k=0,1,2,\ldots$
+
+
+
+### Stopping criterion
+
+ A necessary condition for $\boldsymbol{\theta}_k$ to be a local minimum is that $\nabla_{\!\boldsymbol \theta} \phi(\boldsymbol{\theta}_k)=\boldsymbol{0}_2$. If we wait for the gradient vector to become exactly the zero vector, we will be liable to wait forever. Instead, it is important to stop when the gradient is *close enough* to zero. A simple stopping criterion is
+$$\|\nabla_{\!\boldsymbol \theta}\, \phi(\boldsymbol{\theta}_{k})\|<\epsilon_a$$
+
+where $\|\cdot\|$ is the usual vector norm and $\epsilon_a$ is the absolute tolerance which we can set to a small number for example  $\epsilon_a = 10^{-6}$.
+
+
+
+
+### Raw Newton's method
+
+Starting with $\boldsymbol \theta_0$, given a point $\boldsymbol{\theta}_k$, the next point in the Newton iteration is 
+
+$$
+\boldsymbol{\theta}_{k+1}=\boldsymbol{\theta}_k+\boldsymbol{\Delta}_k
+$$ 
+
+where $\boldsymbol{\Delta}_k$ the solution of the linear system
+
+$$
+\boldsymbol{H}_k\,\boldsymbol{\Delta}_k = - \boldsymbol{g}_k.
+$$
+
+where   
+
+$$
+\boldsymbol{g}_k=\nabla_{\! \boldsymbol\theta} \,\phi(\boldsymbol{\theta}_k)\,,\qquad \boldsymbol{H}_k=
+\nabla^2_{\! \boldsymbol\theta}\, \phi(\boldsymbol{\theta}_k)
+$$
+
+are the gradient vector and Hessian matrix evaluated  at $\boldsymbol{\theta}_k$. 
+
+## Question 3 
+
+Using  Rosenbrock's function and starting at the point $\boldsymbol{\theta}_0=(-1/2,1/2)^T$: 
+
+* Code up Newton's iteration with the stopping criterion  described above.  You may use the code below for your answer.
+
+* Plot the trajectory of the iterations $\{\boldsymbol{\theta}_k\}$ over the contour plot of the function. The R function `arrows` may be useful for this purpose. How many iterations did it take to stop?  
+
+* At each iteration keep the value of the function and then plot the sequence of function values at the end. What is worth noting in the sequence of function values? 
+
+
+
+
+```{r}
+#| code-fold: show
+#| eval: FALSE
+
+theta  <- c(-1/2,1/2) # starting point 
+abstol <- 1e-6        # absolute tolerance
+
+# evaluates objective fun, gradient and Hessian at current point
+
+fn_pack <- rb2(theta = theta,a = 10,b = 1)
+fn      <- fn_pack$f
+grad    <- fn_pack$g 
+hess    <- fn_pack$H 
+
+######  initialisations
+k             <- 1           # iterations counter
+maxit         <- 1000        # maximum number of iterations
+theta_seq     <- matrix(NA,nrow = maxit, ncol = 2) # parameter value iterations
+theta_seq[k,] <- theta
+fn_seq        <- rep(NA,maxit)    #objective function value iterations
+fn_seq[k]     <- fn  
+
+while(norm(grad,type="2") > abstol){#  stopping criterion
+
+  Delta <- -solve(hess,grad) # computes Newton direction
+
+  # updating
+    
+  theta <- theta + Delta
+  
+  fn    <- rb2(theta = theta,a = 10,b = 1)$f
+  grad  <- rb2(theta = theta,a = 10,b = 1)$g
+  hess  <- rb2(theta = theta,a = 10,b = 1)$H
+  
+  k             <- k+1
+  theta_seq[k,] <- theta 
+  fn_seq[k]     <- fn
+   
+} 
+```
+
+
+
+### **Solution**
+
+```{r}
+theta  <- c(-1/2,1/2) # starting point 
+abstol <- 1e-6        # absolute tolerance
+
+# evaluates objective fun, gradient and Hessian at current point
+
+fn_pack <- rb2(theta = theta,a = 10,b = 1)
+fn      <- fn_pack$f
+grad    <- fn_pack$g 
+hess    <- fn_pack$H 
+
+######  initialisations
+k             <- 1           # iterations counter
+maxit         <- 1000        # maximum number of iterations
+theta_seq     <- matrix(NA,nrow = maxit, ncol = 2) # parameter value iterations
+theta_seq[k,] <- theta
+fn_seq        <- rep(NA,maxit)    #objective function value iterations
+fn_seq[k]     <- fn  
+
+while(norm(grad,type="2") > abstol){#  stopping criterion
+
+  Delta <- -solve(hess,grad) # computes Newton direction
+
+  # updating
+    
+  theta <- theta + Delta
+  
+  fn    <- rb2(theta = theta,a = 10,b = 1)$f
+  grad  <- rb2(theta = theta,a = 10,b = 1)$g
+  hess  <- rb2(theta = theta,a = 10,b = 1)$H
+  
+  k             <- k+1
+  theta_seq[k,] <- theta 
+  fn_seq[k]     <- fn
+   
+}
+
+contour(x      = theta1,
+        y      = theta2,
+        z      = M,
+        levels = lev,
+        main   = "Contours of the Rosenbrook function a=10, b=1")
+
+abline(h=1,lty=2,lwd=0.5)
+abline(v=1,lty=2,lwd=0.5)
+points(x=theta_seq[,1], y=theta_seq[,2], pch=19, col='orange')
+points(x=theta[1], y=theta[2], pch=19, col='red')
+arrows(theta_seq[1:k-1, 1], 
+       theta_seq[1:k-1, 2], 
+       theta_seq[2:k, 1], 
+       theta_seq[2:k, 2],
+       length=0.1,
+       col='orange')
+```
+
+It took 11 iterations to stop. The sequence of function values increases initially, then decreases
+towards zero.
+
+## Real example: AIDS epidemic in Belgium
+
+The following data are reported AIDS cases in Belgium, in the early stages of an epidemic episode.
+
+
+
+
+|  Year | 1981 | 1982 | 1983 | 1984 | 1985 | 1986 | 1987 | 1988 | 1989 | 1990 | 1991 | 1992 | 1993 |
+|:-----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|
+| Cases |  12  |  14  |  33  |  50  |  67  |  74  |  123 |  141 |  165 |  204 |  253 |  246 |  240 |
+
+One important question, early in such epidemics, is whether control measures are beginning to have an impact or whether the disease is continuing to spread essentially unchecked. A simple model for unchecked growth leads to an *exponential increase* model. The model says that the number of cases, $\mathcal Y_i$, is an observation of an independent Poisson random variable, with expected value $\mu_i = \exp(\theta^*_1+\theta^*_2\,t_i)$ where $t_i$ is the number of years since 1980 and $\theta^*_1$ and $\theta^*_2$ are unknown parameters to be estimated by the data.
+
+
+
+## Question 4 
+
+Define $\boldsymbol{\theta}^T=(\theta_1,\theta_2)$. Plot the contours of the negative log-likelihood of $\boldsymbol{\theta}$ in the ranges $\theta_1\in(0,4)$ and $\theta_2\in(0.1,0.4)$
+ 
+
+### **Solution**
+
+```{r}
+x <- c(1,2,3,4,5,6,7,8,9,10,11,12,13)
+y <- c(12,14,33,50,67,74,123,141,165,204,253,246,240)
+Data <- data.frame(x,y)
+
+theta1 <- seq( from = 0, to = 4,length=100)
+theta2 <- seq(from = 0, to = 0.4,length=100)
+
+neg_loglik_poisson <- function(theta1,theta2,data){
+ par <- c(theta1,theta2)
+ y <- data$y
+ X <- model.matrix(~data$x)
+ lin_pred <- X %*% par
+ res <- crossprod(par,crossprod(X,y))-sum(exp(lin_pred))-sum(lgamma(y+1))
+-res
+}
+
+M <- matrix(NA,
+          nrow = 100,
+          ncol = 100)
+
+for (i in seq_along(theta1)){
+  for (j in seq_along(theta2)){
+    M[i,j]<- neg_loglik_poisson(theta1[i],theta2[j],Data)
+  }
+}
+
+N_grid <- 100
+theta1_grid <- seq(from = 0,to = 4, length = N_grid)
+theta2_grid <- seq(from = 0,to = 0.4,length = N_grid)
+
+neg_loglik_poisson <- Vectorize(neg_loglik_poisson,vectorize.args = c("theta1","theta2"))
+nll_grid <- outer(X = theta1_grid,Y = theta2_grid,FUN = neg_loglik_poisson,data=Data)
+
+levels <- quantile(x = nll_grid, probs = exp(seq(from = log(0.005),to = log(0.9), length = 15)))
+
+contour(x = theta1_grid,
+   y = theta2_grid,
+   z = nll_grid,
+   levels = levels,
+   xlab = expression(theta[1]),
+   ylab = expression(theta[2]))
+```
+
+
+
+## Question 5 
+
+Starting at the point $\boldsymbol{\theta}_0=(\log(5),0.5)$. Code-up  Newton's method  to verify that the maximum likelihood estimator is 
+$$
+\hat{\boldsymbol{\theta}} \approx (3.14059,0.2021212)\,.
+$$
+Plot the trajectory of the iterations $\{\boldsymbol{\theta}_k\}$ over the contour plot of the negative loglikelihood and at each iteration. How many iterations did it take to stop?
+
+**Note** You may want to consult [Appendix B](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/3/docs/07-optimisation-in-R.html) of the lectures notes  about [Automatic differentiation in R](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/3/docs/07-optimisation-in-R.html#sec-automatic-differentiation) for a generic code for analytical evaluation of partial derivatives in \mathbb{R}.
+
+
+### **Solution**
+
+```{r}
+theta  <- c(log(5),1/2) # starting point 
+abstol <- 1e-6        # absolute tolerance
+loglik_expr <- expression(-exp(theta1+theta2*x)+y*(theta1+theta2*x))
+neg_loglik_poisson_fn <- function(theta,data){
+                         neg_loglik_poisson(theta[1],theta[2],data)
+}
+negloglik <- neg_loglik_poisson_fn(theta=c(log(5),0.5), data = Data)
+
+negloglik_deriv <- deriv(expr = loglik_expr, namevec = c("theta1","theta2"),
+                         function.arg = c("theta1","theta2","y","x"), hessian = TRUE)
+
+negloglik_grad <- function(theta = c(0,0), data = 1){
+                      aux <- negloglik_deriv(theta1 = theta[1],
+                      theta2 = theta[2],
+                      y = data$y,
+                      x =data$x)
+
+                     grad <- apply(attr(aux,"gradient"),2,sum)
+                     -as.matrix(grad)
+}
+grad <- negloglik_grad(theta=c(log(5),0.5), data=Data)
+
+negloglik_hess <- function(theta = c(0,0), data = 1){
+
+                      aux <- negloglik_deriv(theta1 = theta[1],theta2 = theta[2],y = data$y,x = data$x)
+                      hess <-apply(attr(aux,"hessian"),c(2,3),sum)
+                      -hess
+}
+hess <- negloglik_hess(theta=c(log(5),0.5), data=Data)
+
+theta  <- c(log(5),1/2)
+k             <- 1           # iterations counter
+maxit         <- 1000        # maximum number of iterations
+theta_seq     <- matrix(NA,nrow = maxit, ncol = 2) # parameter value iterations
+theta_seq[k,] <- theta
+fn_seq        <- rep(NA,maxit)    #objective function value iterations
+fn_seq[k]     <- negloglik
+
+while(norm(grad,type="2") > abstol){
+  Delta <- -solve(hess,grad) 
+  theta <- theta + Delta
+  fn    <- neg_loglik_poisson_fn(theta = theta, data = Data)
+  grad  <- negloglik_grad(theta = theta, data=Data)
+  hess  <- negloglik_hess(theta = theta, data=Data)
+  k             <- k+1
+  theta_seq[k,] <- theta 
+  fn_seq[k]     <- fn
+} 
+
+contour(x = theta1_grid,
+   y = theta2_grid,
+   z = nll_grid,
+   levels = levels,
+   xlab = expression(theta[1]),
+   ylab = expression(theta[2]))
+
+abline(h=theta[2],lty=2,lwd=0.5)
+abline(v=theta[1],lty=2,lwd=0.5)
+points(x=theta_seq[,1], y=theta_seq[,2], pch=19, col='orange')
+points(x=theta[1], y=theta[2], pch=19, col='red')
+arrows(theta_seq[1:k-1, 1], 
+       theta_seq[1:k-1, 2], 
+       theta_seq[2:k, 1], 
+       theta_seq[2:k, 2],
+       length=0.1,
+       col='orange')
+k
+```
+
+It took 7 iterations to stop.

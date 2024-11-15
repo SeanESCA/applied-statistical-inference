@@ -1,0 +1,449 @@
+---
+title: 'MA40198: Applied Statistical Inference'
+subtitle: "Lab 3: Normal, Student's T, and Logistic Regression"
+author: "Group 13: Sean Soon and Shaveen Colambage"
+date: "2024-10-19"
+output: html_document
+---
+
+\(\newcommand{\rel}{{\rm I\hspace{-0.7mm}R}}\)
+\(\newcommand{\mathbfcal}[1]{\mathcal{\mathbf{#1}}}\)
+\(\newcommand{\wh}[1]{\widehat{#1}}\)
+\(\newcommand{\wt}[1]{\widetilde{#1}}\)
+\(\newcommand{\proper}[1]{\text{#1}}\)
+\(\newcommand{\pP}{\proper{P}}\)
+
+[Go back to Moodle page](https://moodle.bath.ac.uk/course/view.php?id=1836&section=11)
+
+This lab is about gaining a solid understanding of alternative formulations of the  simple linear regression normal model such as the ones based on the Logistic and Student's T distribution.
+
+
+## Normal, T and Logistic regression 
+
+Consider the following two data sets of $n=100$ observations from response variable $Y$ and a single explanatory variable $X$
+
+```{r}
+data_A <- read.table("https://people.bath.ac.uk/kai21/ASI/data/Lab3_data_A.txt")
+data_B <- read.table("https://people.bath.ac.uk/kai21/ASI/data/Lab3_data_B.txt")
+```
+
+
+
+Also consider the following 3 alternative linear location regression  models (as in [Example 2.1](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/6/docs/01-optimisation.html#exm-location-scale-reg-idlink-0) and [Example 2.2](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/6/docs/01-optimisation.html#exm-t-reg-idlink-0) of the Lecture Notes) for the conditional distribution  $Y|X=x$:
+
+1. $Y|x \sim N(\mu(\boldsymbol{\theta}^*,x)=\theta_1^*+\theta_2^*\,x,\exp(2*\theta_3^*))$ where $(\theta_1^*,\theta_2^*,\theta_3^*)\in \rel^3$ are unknown.
+
+2. $Y|x \sim \mbox{Logistic}(\mu(\boldsymbol{\theta}^*,x)=\theta_1^*+\theta_2^*\,x,\exp(\theta_3^*))$ where $(\theta_1^*,\theta_2^*,\theta_3^*)\in \rel^3$  are unknown.
+
+3. $Y|x \sim \mbox{t}(\mu(\boldsymbol{\theta}^*,x)=\theta_1^*+\theta_2^*\,x,\exp(\theta_3^*),2+\exp(\theta_4^*))$ where $(\theta_1^*,\theta_2^*,\theta_3^*,\theta_4^*)\in \rel^4$ are unknown.
+
+
+Note how we  reparametrised to guarantee some of the parameters are strictly positive (the variance in the normal case and the scale parameter in Logistic case) or larger than 2 (the degrees of freedom in the Student's t distribution).
+
+# Question 1
+
+For both data sets and the three alternative models, compute the maximum likelihood estimates of the unknown parameters. In each case, plot the data against the estimated location line $\mu(\widehat{\boldsymbol{\theta}},x)=\hat{\theta}_1+\hat{\theta}_2\,x$.
+What conclusions can you draw from the plots?
+
+You may want to use: 
+
+
+* `optim` for minimisation of the negative loglikelihoods.  Use the BFGS method via the option `method="BFGS"`
+
+* automatic differentiation with `deriv` to evaluate 
+gradients. Note you can install and load the `rlang` package to manipulate nested expressions that can be differentiated with `deriv`, see example below:
+
+```{r}
+# install.packages("rlang") # only run once
+library(rlang)
+
+expr0 <- expr(x1*theta1 + x2*theta2 )
+expr_nested_1 <- expr(sin(!!expr0))
+expr_nested_2 <- expression(sin(x1*theta1 + x2*theta2))
+
+
+deriv_nested_1 <-
+deriv(expr_nested_1,
+      namevec = c("theta1","theta2"),
+      function.arg = c("theta1","theta2","x1","x2"))
+
+
+deriv_nested_2 <-
+deriv(expr_nested_2,
+      namevec = c("theta1","theta2"),
+      function.arg = c("theta1","theta2","x1","x2"))
+
+
+deriv_nested_1(1,1,1,1)
+deriv_nested_2(1,1,1,1)
+```
+
+
+Now that `rlang` requires analytical expressions to be created with `expr` rather than with `expression`.
+
+## Solution to Question 1
+
+```{r ell_init}
+# This function returns two functions: fn evaluates the expression 
+# ell_expr and gr calculates the gradient.
+
+ell_init = function(ell_expr, 
+                    namevec = c("theta1", "theta2", "theta3"), 
+                    theta_init = 1:3 * 0) {
+  ell_deriv <- deriv(
+    ell_expr,
+    namevec = namevec,
+    function.arg = c(namevec, "x", "y")
+  )
+  
+  fn <- function(theta = theta_init, x = 1, y = 1) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(ell_deriv, c(theta_list, list("x" = x, "y" = y)))
+    sum(as.numeric(aux))
+  }
+  
+  gr <- function(theta = theta_init, x = 1, y = 1) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(ell_deriv, c(theta_list, list("x" = x, "y" = y)))
+    apply(attr(aux, "gradient"), 2, sum)
+  }
+  
+  list(fn = fn, gr = gr)
+}
+```
+
+```{r opt}
+opt = function(ell, par = 1:3 * 0, data = data_A) {
+  optim(par = par,
+        fn = ell$fn,
+        gr = ell$gr,
+        method = "BFGS",
+        hessian = TRUE,
+        x = data$x,
+        y = data$y)
+}
+```
+
+
+```{r ell_normal}
+mean_expr <- expr(theta1 + theta2 * x)
+ell_normal_expr <- expr(0.5 * log(2 * pi) + theta3 + 0.5 * ((y - !!mean_expr)**2) / exp(2 * theta3))
+
+ell_normal <- ell_init(ell_normal_expr)
+```
+
+```{r ell_log}
+z_expr <- expr((y - !!mean_expr) / exp(theta3))
+ell_log_expr <- expr(theta3 + !!z_expr + 2 * log(1 + exp(-!!z_expr)))
+ell_log <- ell_init(ell_log_expr)
+
+```
+
+```{r ell_t}
+scale_expr <- expr(2 + exp(theta4))
+t_expr <- expr(-lgamma(0.5 * (1 + !!scale_expr)) + theta3 + 0.5 * log(pi * !!scale_expr) + lgamma(!!scale_expr * 0.5) + ((!!scale_expr + 1) * 0.5) * log(1 + (1 / !!scale_expr) * ((y - !!mean_expr) / exp(theta3))^2))
+
+ell_t <- ell_init(t_expr, 
+                  namevec = c("theta1", "theta2", "theta3", "theta4"), 
+                  theta_init = 1:4 * 0
+)
+```
+
+```{r optim_res}
+# The following can be useful for Question 3.
+# optim results for data_A
+opt_res_normal_A <- opt(ell_normal)
+opt_res_log_A <- opt(ell_log)
+opt_res_t_A <- opt(ell_t, par = 1:4 * 0)
+
+# optim results for data_B
+opt_res_normal_B <- opt(ell_normal, data = data_B)
+opt_res_log_B <- opt(ell_log, data = data_B)
+opt_res_t_B <- opt(ell_t, par = 1:4 * 0, data = data_B)
+```
+
+```{r plot_mean}
+# Plots the estimated location parameter and the 95% confidence interval (if 
+# confint = TRUE).
+plot_mean <- function(opt_res, col = col, confint = FALSE, xlim, n_grid = 100) {
+  # Plot the estimated location parameter line.
+  abline(opt_res$par[1], opt_res$par[2], col = col)
+
+  if(confint) {
+    # Calculate the lines for the confidence interval.
+    x <- seq(xlim[1], xlim[2], length = n_grid)
+    S <- solve(opt_res$hessian)
+    ci <- matrix(NA, nrow=n_grid, ncol=2)
+    
+    for (i in 1:n_grid){
+      
+      vec.x <- 1:length(opt_res$par) * 0
+      vec.x[1] <- 1
+      vec.x[2] <- x[i]
+      est   <- crossprod(vec.x, opt_res$par)
+      se    <- sqrt(crossprod(vec.x,S)%*%vec.x)
+      ci[i,]   <-c(est-1.96*se,est+1.96*se)
+    }
+    
+    # Plot the confidence interval.
+    lines(x, ci[,1], col=col)
+    lines(x, ci[,2], col=col)
+  }
+}
+```
+
+```{r}
+plot_all = function(opt_res_normal, opt_res_log, opt_res_t, data, main, xlim = c(-3, 3), confint = FALSE) {
+  # Plot the data.
+  plot(data, main = main, xlim = xlim)
+  
+  # Plot the results for the normal distribution.
+  plot_mean(opt_res_normal, col = "red", confint = confint, xlim = xlim)
+  plot_mean(opt_res_log, col = "green", confint = confint, xlim = xlim)
+  plot_mean(opt_res_t, col = "blue", confint = confint, xlim = xlim)
+  legend("bottomright", 
+       legend = c("Normal", "Logistic", "t"), 
+       col = c("red", "green", "blue"),
+       lwd = 2)
+}
+```
+
+```{r}
+plot_all(opt_res_normal_A, opt_res_log_A, opt_res_t_A, data_A, main = "Plot for data set A")
+plot_all(opt_res_normal_B, opt_res_log_B, opt_res_t_B, data_B, main = "Plot for data set B")
+```
+
+Based on the plots above, regression models using the normal distribution are
+the most easily influenced by outliers, followed by the logistic distribution,
+then the student's t-distribution.
+
+# Question 2
+
+
+For both data sets and the three alternative models, compute and plot (together with the data) 95\% asymptotic confidence bands  for the unknown location line $\mu(\boldsymbol{\theta}^*,x)=\theta_1^*+\theta_2^*\,x$ in the range $x \in (-3,3)$. You may use and adapt the code given in the [solutions to Lab 2](https://moodle.bath.ac.uk/pluginfile.php/2653098/mod_resource/content/1/Lab2_new_sols.html) to obtain the confidence bands. What conclusions can you draw form the plot of the confidence bands.
+
+
+## Solution to  Question 2
+
+```{r}
+plot_all(opt_res_normal_A, opt_res_log_A, opt_res_t_A, data_A, main = "Plot for data set A", confint = TRUE)
+plot_all(opt_res_normal_B, opt_res_log_B, opt_res_t_B, data_B, main = "Plot for data set B", confint = TRUE)
+```
+
+For data set A, the confidence intervals for all the distributions are of similar widths and mostly overlap. However, for data set B, the confidence intervals mostly do not overlap for $x \notin [-1, 0]$ and the regression model using the student's t-distribution has the narrowest confidence intervals, followed by the logistic distribution, then the normal distribution.
+
+# Question 3
+
+
+Use the Generalised Likelihood Ratio Test (see below) to test the hypotheses:
+
+* Case A:  For all three alternative models:
+
+$$
+H_0\colon \theta_1^*+2\theta_2^*=10
+\qquad \mbox{vs}\qquad 
+H_a\colon \theta_1^*+2\theta_2^*\neq 10
+$$
+that is, the null specifies the unknown location parameter  at $x=2$ equals 10.
+
+* Case B: Only for the Student's t
+
+$$
+H_0\colon \exp(\theta^*_3) = 1
+\qquad \mbox{vs}\qquad 
+H_a\colon \exp(\theta^*_3) \neq 1
+$$
+that is, the null specifies the scale parameter is equal to one.
+
+* Case C: Only for the Student's t
+
+$$
+H_0\colon \exp(\theta^*_4) = 1
+\qquad \mbox{vs}\qquad 
+H_a\colon \exp(\theta^*_4) \neq 1
+$$
+that is, the null specifies the degrees of freedom are equal to 3.
+
+
+
+In all cases, use an approximate significance level $\alpha=0.05$.
+
+Now, repeat all of the hypotheses tests above but using a 95\% aymptotic confidence interval for the relevant parameter. How do these new conclusions compare to the ones obtained using the GLRT?
+
+## Generalised Likelihood ratio test 
+
+
+Consider testing the following general hypotheses: 
+
+$$H_0\colon \boldsymbol{g}(\boldsymbol{\theta}^*)=\boldsymbol{0}_r\qquad \mbox{vs}\qquad H_a\colon \boldsymbol{g}(\boldsymbol{\theta}^*)\neq\boldsymbol{0}_r$$
+for some given vector valued function $\boldsymbol{g}:\rel^{p+m}\to \rel^r\quad \,, r\leq p+m$ that imposes $r$ restrictions on $\boldsymbol{\theta}^*$. 
+
+:::{.callout-tip icon=false}
+
+## Asymptotic distribution of the GLRT
+
+::: {#thm-asymptotic-distribution-GLRT}
+
+
+
+Let  $\wh{\boldsymbol{\theta}}_0(\boldsymbol{y})$ be the MLE of $\boldsymbol{\theta}^*$ subject to the constraints $\boldsymbol{g}(\boldsymbol{\theta}^*)=\boldsymbol{0}_r$ and let $\wh{\boldsymbol{\theta}}(\boldsymbol{y})$ be the unrestricted MLE.  Then, in the limit as $n \to \infty$
+$$
+T(\mathbfcal{Y})=2\left( \ell(\wh{\boldsymbol{\theta}}(\mathbfcal Y)|\mathbfcal Y) - \ell(\wh{\boldsymbol{\theta}}_0(\mathbfcal Y)|\mathbfcal Y) \right) \sim \chi^2_r
+$$
+$\ell$ denotes the loglikelihood function.
+:::
+:::
+
+The corresponding  test procedure is defined below.
+
+:::{.callout-tip icon=false}
+
+## GLRT procedure
+
+::: {#def-GLRT-procedure-pvalue}
+
+
+Given an observed value $t_{obs}(\boldsymbol{y})$ of the test statistic $T(\mathbfcal Y)$
+
+* **Reject the null hypothesis** $H_0$ if $t_{obs}(\boldsymbol{y})>\chi^2_{r,\alpha}$ 
+  
+  
+
+* **Accept (do not reject) the null hypothesis** $H_0$ if   $t_{obs}(\boldsymbol{y}) \leq \chi^2_{r,\alpha}$
+  
+where $\chi^2_{r,\alpha}$ is the upper $\alpha$ quantile of a chi-squared distribution with $r$ degrees of freedom, that is, is a value $\chi^2_{r,\alpha}$ such that $\pP(W\geq\chi^2_{r,\alpha})=\alpha$ where $W\sim\chi^2_r$.  
+
+:::
+:::
+
+
+This test procedure has an approximate significance level $\alpha$.
+
+## Solution to  Question 3
+
+```{r ell_init_H0A}
+# Case A substitutions.
+theta_init_H0 = c(0, 0)
+theta1_H0A <- expr(10 - 2*theta2)
+mean_expr_H0A <- expr(!!theta1_H0A + theta2 * x)
+
+# Setup for the normal distribution for case A.
+ell_normal_expr_H0A <- expr(0.5 * log(2 * pi) + theta3 + 0.5 * ((y - !!mean_expr_H0A) ** 2) / exp(2 * theta3))
+
+ell_normal_H0A <- ell_init(ell_normal_expr_H0A,
+                       namevec = c("theta2", "theta3"),
+                       theta_init = theta_init_H0)
+
+# Setup for the logistic distribution for case A.
+z_expr_H0A <- expr((y - !!mean_expr_H0A) / exp(theta3))
+ell_log_expr_H0A <- expr(theta3 + !!z_expr_H0A + 2 * log(1 + exp(-!!z_expr_H0A)))
+ell_log_H0A <- ell_init(ell_log_expr_H0A,
+                       namevec = c("theta2", "theta3"),
+                       theta_init = theta_init_H0)
+
+# Setup for the t-distribution for case A.
+t_expr_H0A <- expr(-lgamma(0.5 * (1 + !!scale_expr)) + theta3 + 0.5 * log(pi * !!scale_expr) + lgamma(!!scale_expr * 0.5) + ((!!scale_expr + 1) * 0.5) * log(1 + (1 / !!scale_expr) * ((y - !!mean_expr_H0A) / exp(theta3))^2))
+ell_t_H0A <- ell_init(t_expr_H0A, 
+                      namevec = c("theta2", "theta3", "theta4"))
+
+# Setup for case B.
+t_expr_H0B <- expr(-lgamma(0.5 * (1 + !!scale_expr)) + 0.5 * log(pi * !!scale_expr) + lgamma(!!scale_expr * 0.5) + ((!!scale_expr + 1) * 0.5) * log(1 + (1 / !!scale_expr) * ((y - !!mean_expr))^2))
+ell_t_H0B <- ell_init(t_expr_H0B, 
+                     namevec = c("theta1", "theta2", "theta4")
+)
+
+# Setup for case C.
+t_expr_H0C <- expr(-lgamma(2) + theta3 + 0.5 * log(pi * 3) + lgamma(1.5) + 2 * log(1 + (1 / 3) * ((y - !!mean_expr) / exp(theta3))^2))
+ell_t_H0C <- ell_init(t_expr_H0C)
+```
+
+```{r glrt_test}
+# Function that conducts the GLRT test.
+glrt_test <- function(params_h0, opt_res_h1, data = data_A, df = 1) {
+  opt_res_h0 <- do.call(opt, params_h0)
+  test_stat = 2*(opt_res_h0$value - opt_res_h1$value)
+  crit_val = qchisq(0.95, df)
+  c(signif(test_stat, 3), 
+    signif(crit_val, 3), 
+    ifelse(test_stat <= crit_val, "Accept H0", "Reject H0"))
+}
+```
+
+```{r confint_fn}
+confint_A = function(opt_res) {
+  S <- solve(opt_res$hessian)
+  mu <- opt_res$par[1] + 2*opt_res$par[2]
+  var <- S[1,1] + 4*S[2,2] + 4*S[1,2]
+  confint_lower = mu - qnorm(0.975) * sqrt(var)
+  confint_upper = mu + qnorm(0.975) * sqrt(var)
+  c(signif(confint_lower, 3), 
+    signif(confint_upper, 3), 
+    ifelse(confint_lower > 10 | confint_upper < 10, "Reject H0", "Accept H0"))
+}
+
+confint_B = function(opt_res) {
+  S <- solve(opt_res$hessian)
+  theta3 <- opt_res$par[3]
+  var <- S[3,3]
+  confint_lower = exp(theta3 - qnorm(0.975) * sqrt(var))
+  confint_upper = exp(theta3 + qnorm(0.975) * sqrt(var))
+  c(signif(confint_lower, 3), 
+    signif(confint_upper, 3), 
+    ifelse(confint_lower > 1 | confint_upper < 1, "Reject H0", "Accept H0"))
+}
+
+confint_C = function(opt_res) {
+  S <- solve(opt_res$hessian)
+  theta4 <- opt_res$par[4]
+  var <- S[4,4] 
+  confint_lower = exp(theta4 - qnorm(0.975) * sqrt(var))
+  confint_upper = exp(theta4 + qnorm(0.975) * sqrt(var))
+  c(signif(confint_lower, 3), 
+    signif(confint_upper, 3),
+    ifelse(confint_lower > 1 | confint_upper < 1, "Reject H0", "Accept H0"))
+}
+```
+
+```{r res}
+res = data.frame( 
+  row.names = c("DataA_CaseA_Normal", "DataA_CaseA_Log", "DataA_CaseA_t",
+                "DataA_CaseB_t", "DataA_CaseC_t", "DataB_CaseA_Normal", 
+                "DataB_CaseA_Log", "DataB_CaseA_t", "DataB_CaseB_t",
+                "DataB_CaseC_t"))
+
+# GLRT for all cases and data.
+
+res[1, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_normal_H0A, par = c(0, 0)), opt_res_normal_A)
+res[2, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_log_H0A, par = c(0, 0)), opt_res_log_A)
+res[3, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_t_H0A), opt_res_t_A)
+res[4, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_t_H0B), opt_res_t_A)
+res[5, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_t_H0C), opt_res_t_A)
+res[6, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_normal_H0A, par = c(0, 0), data = data_B), opt_res_normal_B)
+res[7, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_log_H0A, par = c(0, 0), data = data_B), opt_res_log_B)
+res[8, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_t_H0A, data = data_B), opt_res_t_B)
+res[9, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_t_H0B, data = data_B), opt_res_t_B)
+res[10, c("test_stat", "crit_val", "glrt_res")] = glrt_test(list(ell = ell_t_H0C, data = data_B), opt_res_t_B)
+
+# Confidence intervals for all cases and data.
+res[1, c("confint_lower", "confint_upper", "confint_res")] = confint_A(opt_res_normal_A) 
+res[2, c("confint_lower", "confint_upper", "confint_res")] = confint_A(opt_res_log_A)
+res[3, c("confint_lower", "confint_upper", "confint_res")] = confint_A(opt_res_t_A) 
+res[4, c("confint_lower", "confint_upper", "confint_res")] = confint_B(opt_res_t_A)
+res[5, c("confint_lower", "confint_upper", "confint_res")] = confint_C(opt_res_t_A)
+res[6, c("confint_lower", "confint_upper", "confint_res")] = confint_A(opt_res_normal_B) 
+res[7, c("confint_lower", "confint_upper", "confint_res")] = confint_A(opt_res_log_B)
+res[8, c("confint_lower", "confint_upper", "confint_res")] = confint_A(opt_res_t_B) 
+res[9, c("confint_lower", "confint_upper", "confint_res")] = confint_B(opt_res_t_B)
+res[10, c("confint_lower", "confint_upper", "confint_res")] = confint_C(opt_res_t_B) 
+```
+
+```{r results="asis"}
+library(knitr)
+kable(res)
+```
+
+The GLRT and 95\% asymptotic confidence intervals agree for the normal and logistic distributions in all the cases with both data sets. However, they do not agree for the t-distribution in case A with data A and case C with data B. 
+
+**Note:** we are not sure whether we are doing things correctly because some of the GLRT test statistics are much greater than the critical value and the confidence interval for case C with data B is way too large.

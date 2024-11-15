@@ -1,0 +1,614 @@
+---
+title: 'MA40198: Applied Statistical Inference'
+subtitle: "Lab 6: Asymptotic simulations"
+author: "Group 13: Sean Soon and Shaveen Colambage"
+output: html_document
+---
+
+[Go back to Moodle page](https://moodle.bath.ac.uk/course/view.php?id=1836&section=11)
+
+This lab is about using simulations to understand the asymptotic results shown in the lecture notes. 
+
+```{r load_data, include=FALSE}
+load("y_samples_opt_vec.RData")
+load("glrts.RData")
+load("opt_res_vec_q4.RData")
+```
+
+## Question 1
+
+Generate $N=10,000$ independent samples $\boldsymbol{y}_1,\ldots, \boldsymbol{y}_N$ where  each $\boldsymbol{y}_i$ is a random sample of size
+$2n$ from a Negative Binomial distribution with  population size $\nu^*=1/2$ and mean $\mu^*_1=5$ for the first $n$ observations of $\boldsymbol{y}_i$ and mean $\mu^*_2=30$ for the second $n$ observations of $\boldsymbol{y}_i$. You may use the `R` function `rnbinom` for this purpose. 
+
+Save all the samples in the rows of a matrix of dimension $N\times (2n)$. Call this matrix `y_samples`
+
+## Solution to Question 1 {-}
+
+```{r y_samples}
+theta_star = c(log(5), log(6), -log(2))
+N = 10000
+n = 100
+y_samples = matrix(NA, nrow = N, ncol = 2*n)
+
+for(i in 1:N) {
+  y_samples[i, 1:n] = rnbinom(n, size = 0.5, mu = 5)
+  y_samples[i, (n + 1):(2 * n)] = rnbinom(n, size = 0.5, mu = 30)
+}
+```
+
+## Question 2
+
+Consider the parametric model where the first $n$ observations are Negative Binomial with mean $\exp(\theta^*_1)$ and size $\exp(\theta^*_3)$ and the following $n$ observations have mean $\exp(\theta^*_1+\theta^*_2)$ and  size $\exp(\theta^*_3)$ for some unknown $\bm{\theta}^*=(\theta^*_1,\theta^*_2,\theta^*_3)^T$. 
+
+
+
+For each of the $N=10,000$ samples (that is, each row of `y_samples`) compute the standardised vector: 
+
+$$
+\widehat{\bm{\theta}}_{std}(\bm{y}):=[\nabla^2_{\!\boldsymbol{\theta}}\phi(\widehat{\boldsymbol{\theta}}|\boldsymbol{y})]^{1/2}
+(\widehat{\boldsymbol{\theta}}-\boldsymbol{\theta}^*)
+$$
+
+
+
+So at the end we get a sample: 
+
+$$
+\widehat{\boldsymbol{\theta}}_{std}(\boldsymbol{y}_1),\ldots\widehat{\boldsymbol{\theta}}_{std}(\boldsymbol{y}_N)
+$$ 
+
+from the  distribution of the standardised MLE (not from the asymptotic normal distribution given in [Proposition 3.2 of the lecture notes](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/9/docs/02-likelihood.html#estimators-of-the-asymptotic-variance).
+
+
+
+Save the sample of stardardised MLE vectors in the rows of a matrix of dimension $N\times 3$. Call this matrix `mles_std`
+
+
+Plot a histogram of each entry of the stardardised MLEs and compare it with the pdf of a standard normal distribution.
+
+Plot a scatter plot of each of the three possible pairs of the stardardised MLE  and compare it with the contours of a standard  bivariate normal distribution.
+
+What can you say about the normal approximation to the distribution of the the stardardised  MLE? 
+
+
+
+## Solution to Question 2 {-}
+
+```{r deriv_pack}
+library(glue)
+library(latex2exp)
+library(rlang)
+
+
+deriv_pack = function(func_expr, 
+                    namevec = c("theta1", "theta2", "theta3"),
+                    data_arg_vec = c("y")) {
+  deriv_res <- deriv(
+    func_expr,
+    namevec = namevec,
+    function.arg = c(namevec, data_arg_vec)
+  )
+  
+  fn <- function(theta, data_list = list("y" = 1), apply.sum = T) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(deriv_res, c(theta_list, data_list))
+    if(apply.sum) {
+      sum(as.numeric(aux))
+    } else {
+      c(aux)
+    } 
+  }
+  
+  gr <- function(theta, data_list = list("y" = 1), apply.sum = T) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(deriv_res, c(theta_list, data_list))
+    if(apply.sum) {
+      apply(attr(aux, "gradient"), 2, sum)
+    } else {
+      attr(aux, "gradient")
+    }
+  }
+  
+  list(fn = fn, gr = gr)
+}
+```
+
+```{r fit_optim}
+fit_optim <- function(par_len, mean = 0, sd = 1, fn, gr, method = "BFGS", 
+                      hessian = T, y, N_samples = 100, seed = 3141592){
+  
+  # set.seed(seed)
+  # use set.seed for reproducibility purposes only. But always better to try without it and then settle at the end for reproducibility
+  
+  fit <- vector("list", length = N_samples)
+  for (i in 1:N_samples){
+    
+    stop_crit <-T
+    
+    #tries until it finds an optimisation with no upfront error . this guarantees 'N_samples' optimisation are done
+    
+    while(stop_crit){
+  
+       # sometimes initial point is too far, which throws an straight error, hence the use of 'try'
+       fit[[i]] <- try( 
+            optim(par = rnorm(par_len, mean = mean, sd = sd),
+                  fn  = fn,
+                  gr  = gr,
+                  y = y,
+                  method  = method ,
+                  hessian = hessian),
+                      silent = F) # this supresses the red error messages
+           
+      if(inherits(fit[[i]], "try-error")){
+      
+        stop_crit <-T # if error, tries again
+      
+      } else {
+        
+         stop_crit <-F # if no error, continues to next step
+      }
+    }
+    
+    # check for numerical convergence first 
+    no_convergence <- fit[[i]]$convergence > 0
+    
+    # checks if asymptotic variances are possible to obtain
+    no_variance <- inherits(try(solve(fit[[i]]$hessian),
+                                silent = T), 
+                            "try-error")
+  
+    null_variance <- F
+    NA_variance   <- F
+  
+    if (!no_variance){
+      # checks if asymptotic variance are NaN
+      NA_variance <- as.logical(sum(is.nan(diag(solve(fit[[i]]$hessian)))))
+    
+    if(!NA_variance){
+      # checks if asymptotic variance are zero up to machine precision
+      null_variance <- as.logical(sum(diag(solve(fit[[i]]$hessian))< .Machine$double.eps ^ 0.5))
+      }
+    }
+    
+    fail <- no_variance | no_convergence | NA_variance | null_variance 
+    if (fail){
+      fit[[i]]$value <- NA
+    }
+    
+  } 
+  
+  extract_negloglik <- function(optim_object){
+      optim_object$value
+  }
+  # selects the optimisation with minimum negative loglikelihood
+  nll_vals <- lapply(X = fit, FUN = extract_negloglik)
+  fit[[which.min(nll_vals)]] # return the final selected optimisation
+}
+```
+
+```{r nll}
+mu1_expr = expr(exp(theta1))
+mu2_expr = expr(exp(theta1 + theta2))
+nu_expr = expr(exp(theta3))
+
+nll1_expr <-   expr(-lgamma(!!nu_expr + y) + lgamma(y + 1) + lgamma(!!nu_expr) - !!nu_expr * theta3 + (!!nu_expr + y) * log(!!mu1_expr + !!nu_expr) - y * theta1)
+nll2_expr <- expr(-lgamma(!!nu_expr + y) + lgamma(y + 1) + lgamma(!!nu_expr) - !!nu_expr * theta3 + (!!nu_expr + y) * log(!!mu2_expr + !!nu_expr) - y * (theta1 + theta2))
+
+nll1_pack = deriv_pack(nll1_expr,
+                     namevec = c("theta1", "theta2", "theta3"),
+                     data_arg_vec = c("y"))
+nll2_pack = deriv_pack(nll2_expr,
+                     namevec = c("theta1", "theta2", "theta3"),
+                     data_arg_vec = c("y"))
+nll_fn = function(theta = rep(1, 3), y) {
+  nll1_pack$fn(theta, data_list = list(y = y[1:n])) + 
+    nll2_pack$fn(theta, data_list = list(y = y[(n + 1):(2*n)]))
+}
+nll_gr = function(theta = rep(1, 3), y) {
+  nll1_pack$gr(theta, data_list = list(y = y[1:n])) + 
+    nll2_pack$gr(theta, data_list = list(y = y[(n + 1):(2*n)]))
+}
+```
+
+```{r fit_optim_q2, eval=FALSE}
+y_samples_opt_vec = vector("list", length = N)
+for(i in 1:N) {
+  y_samples_opt_vec[[i]] <- fit_optim(par_len = 3, 
+                                      fn = nll_fn, 
+                                      gr = nll_gr, 
+                                      y = y_samples[i,])
+  # print(j)
+  # if((i %% 100) == 0) {
+    # save(y_samples_opt_vec, file = glue("y_samples_opt_vec_{j}.RData"))
+    # print('Saved!')
+  # }
+}
+```
+
+```{r}
+theta1 <- rep(0, 10000)
+for(i in 1:10000)
+{
+  theta1[i] = y_samples_opt_vec[[i]]$par[1]
+}
+
+theta2 <- rep(0, 10000)
+for(i in 1:10000)
+{
+  theta2[i] = y_samples_opt_vec[[i]]$par[2]
+}
+
+theta3 <- rep(0, 10000)
+for(i in 1:10000)
+{
+  theta3[i] = y_samples_opt_vec[[i]]$par[3]
+}
+
+## histogram of MLEs with pdf of normal
+mles_st <- matrix(nrow = 10000, ncol = 3)
+
+for(i in 1:10000)
+{
+  for(j in 1:3)
+  {
+    mles_st[i,j] = y_samples_opt_vec[[i]]$par[j]
+  }
+}
+
+hist(mles_st, probability = TRUE, breaks=20, ylim=c(0,0.4)) 
+curve(dnorm(x), add=TRUE)
+
+## scatter plot of theta 1 and theta2 with bivariate normal
+## cor1 is correlation between theta1 and theta2
+q <- seq(-15, 15, length=250)
+m <- seq(-15, 15, length=250)
+cor1 <- cor(theta1,theta2)
+M <- matrix(NA,
+            nrow = 250,
+            ncol = 250)
+
+for (i in seq_along(q)){
+  for (j in seq_along(m)){
+    
+    M[i,j]<- ((2*pi*(1-cor1^2))^(-1/2))*exp(-(((q[i]^2)-(2*q[i]*m[j]*cor1)+(m[j]^2))/(2*(1-cor1^2))))
+    
+  }
+}
+lev <- c(0.01,0.1,0.3,0.5,1)
+plot(theta1, theta2)
+contour(x      = q,
+        y      = m,
+        z      = M,
+        levels = lev,
+        main   = "Contours of the bivariate normal",
+        col="red",
+        add=TRUE)
+
+## scatter plot of theta2 and theta3 with bivariate normal
+## cor2 is correlation between thet2 and theta3
+q <- seq(-15, 15, length=250)
+m <- seq(-15, 15, length=250)
+cor2 <- cor(theta2,theta3)
+M <- matrix(NA,
+            nrow = 250,
+            ncol = 250)
+
+for (i in seq_along(q)){
+  for (j in seq_along(m)){
+    
+    M[i,j]<- ((2*pi*(1-cor2^2))^(-1/2))*exp(-(((q[i]^2)-(2*q[i]*m[j]*cor2)+(m[j]^2))/(2*(1-cor2^2))))
+    
+  }
+}
+lev <- c(0.01,0.1,0.3,0.5,1)
+plot(theta2, theta3)
+contour(x      = q,
+        y      = m,
+        z      = M,
+        levels = lev,
+        main   = "Contours of the bivariate normal",
+        col="red",
+        add=TRUE)
+
+## scatter plot of theta1 and theta3 with bivariate normal
+## cor3 is correlation between theta1 and theta3
+q <- seq(-15, 15, length=250)
+m <- seq(-15, 15, length=250)
+cor3 <- cor(theta3,theta1)
+M <- matrix(NA,
+            nrow = 250,
+            ncol = 250)
+
+for (i in seq_along(q)){
+  for (j in seq_along(m)){
+    
+    M[i,j]<- ((2*pi*(1-cor3^2))^(-1/2))*exp(-(((q[i]^2)-(2*q[i]*m[j]*cor3)+(m[j]^2))/(2*(1-cor3^2))))
+    
+  }
+}
+lev <- c(0.01,0.1,0.3,0.5,1)
+plot(theta1, theta3)
+contour(x      = q,
+        y      = m,
+        z      = M,
+        levels = lev,
+        main   = "Contours of the bivariate normal",
+        col="red",
+        add=TRUE)
+```
+
+## Question 3
+
+Generate $N=10,000$ independent samples $\boldsymbol{y}_1,\ldots, \boldsymbol{y}_N$ where  each $\boldsymbol{y}_i$ is a random sample of size
+$2n$ from a Negative Binomial distribution with  population size $\nu^*=1/2$ and mean $\mu^*_1=5$ for the first $n$ observations of $\boldsymbol{y}_i$ and mean $\mu^*_2=5$ for the second $n$ observations of $\boldsymbol{y}_i$. 
+
+Save all the samples in the rows of a matrix of dimension $N\times (2n)$. Call this matrix `y_samples_H0`
+
+Consider the parametric model where the first $n$ observations are Negative Binomial with mean $\exp(\theta^*_1)$ and size $\exp(\theta^*_3)$ and the following $n$ observations have mean $\exp(\theta^*_1+\theta^*_2)$ and  size $\exp(\theta^*_3)$ for some unknown $\bm{\theta}^*=(\theta^*_1,\theta^*_2,\theta^*_3)^T$. For each of the $N=10,000$ samples (that is, each row of `y_samples_H0`) compute the minimised value of the corresponding negative loglikelihood $\phi(\widehat{\bm{\theta}}|\bm{y})$.
+
+Also consider the null model where the $2n$ observations are Negative Binomial with mean $\exp(\theta^*_1)$ and size $\exp(\theta^*_2)$ for some unknown $\bm{\theta}^*=(\theta^*_1,\theta^*_2)^T$. For each of the $N=10,000$ samples (that is, each row of `y_samples_H0`) compute the minimised value of the corresponding negative loglikelihood $\phi_0(\widehat{\bm{\theta}}_0|\bm{y})$.
+
+Compute the generalised loglikelihood ratio statistic
+
+$$T(\bm{y})=2[\phi_0(\widehat{\bm{\theta}}_0|\bm{y})-\phi(\widehat{\bm{\theta}}|\bm{y})]$$
+
+
+
+
+
+So at the end we get a sample 
+
+$$
+T(\bm{y}_1),\ldots,T(\bm{y}_N)
+$$ 
+
+from the  distribution of the generalised loglikelihood ratio statistic
+
+
+
+Save the samples of the generalised loglikelihood ratio statistic in a vector of length $N$. Call this vector `glrts`
+
+Compare the histogram of the samples on `glrts` with the pdf of  a chi-squred distributions with one degree of freedom.
+
+## Solution to Question 3 {-}
+
+```{r H0_init}
+y_samples_H0 = matrix(rnbinom(2*n*N, 0.5, mu=5), nrow = 10000)
+nll_pack_H0 = deriv_pack(nll1_expr,
+                       namevec = c("theta1", "theta3"),
+                       data_arg_vec = c("y"))
+nll_fn_H0 = function(theta = rep(1, 2), y) {
+  nll_pack_H0$fn(theta = theta, data_list = list(y = y))
+}
+
+nll_gr_H0 = function(theta = rep(1, 2), y) {
+  nll_pack_H0$gr(theta = theta, data_list = list(y = y))
+}
+```
+
+```{r fit_optim_q3, eval = FALSE, message = FALSE, warning = FALSE}
+# glrts = 1:N
+
+for(i in 1:N) {
+  opt_res_H0 <- fit_optim(par_len = 2, fn = nll_fn_H0, gr = nll_gr_H0,  
+                          y = y_samples_H0[i,])
+  opt_res_H1 <- fit_optim(par_len = 3, fn = nll_fn, gr = nll_gr, 
+                          y = y_samples_H0[i,])
+  glrts[i] = 2 * (opt_res_H0$value - opt_res_H1$value)
+  # print(i)
+  # if((i %% 100) == 0) {
+  #   save(glrts, file = glue("glrts_{j}.RData"))
+  #   print('Saved!')
+  # }
+}
+```
+
+```{r}
+hist(glrts[glrts <= 1 & glrts >= 0],
+     xlab = TeX(r'($T(\textbf{y}_{i})$)'),
+     main = TeX(r'(Probability histogram of $T(\textbf{y}_{i})$)'),
+     breaks = seq(0, 1, 0.1),
+     prob = T)
+curve(dchisq(x, 1), add = T)
+```
+
+The histogram has a similar shape to the pdf of a $\chi_{1}^{2}$ distribution.
+
+## Question 4
+
+Using the observations in `y_samples` generated in Q1,
+consider the (incorrect) model where the first $n$ observations are Poisson with mean $\exp(\theta^*_1)$ and the following $n$ observations are Poisson with mean $\exp(\theta^*_1+\theta^*_2)$ for some unknown $\bm{\theta}^*=(\theta^*_1,\theta^*_2)^T$. 
+
+
+Compute the least worse value $\bm{\theta}^\dagger\in \rel^2$ that minimises the KL divergence
+
+$$
+\sum_{i=1}^{2n}KL(f(y_i|\bm{\theta},\bm{x}_i),f_*(y_i|\bm{x}_i))
+$$
+
+where $f(y_i|\bm{\theta},\bm{x}_i)$ is the Poisson density for the $i$-th observation and $f_*(y_i|\bm{x}_i)$ is the Negative Binomial density for the $i$-th observation at the true value.
+
+For each of the $N=10,000$ samples (that is, each row of `y_samples`) compute the standardised vector: 
+
+
+$$
+\widehat{\boldsymbol{\theta}}_{std}(\boldsymbol{y}):=
+\left\{
+\left[\wh{\mathbfcal J (\bm{\theta}^\dagger})\right]^{-1}
+\wh{\mathbfcal K (\bm{\theta}^\dagger)}
+\left[\wh{\mathbfcal J (\bm{\theta}^\dagger})\right]^{-1}
+\right\}^{-1/2}
+(\wh{\bm{\theta}}-\bm{\theta}^\dagger)
+$$
+
+where
+
+$$
+\wh{\mathbfcal K (\bm{\theta}^\dagger)}=\sum_{i=1}^n\left[\nabla_{\!\bm{\theta}}\, \log f(y_i|\wh{\bm{\theta}},\bm{x}_i)\right]\left[\nabla_{\!\bm{\theta}}\, \log f(y_i|\wh{\bm{\theta}},\bm{x}_i)\right]^T\,,
+\qquad
+\wh{\mathbfcal J (\bm{\theta}^\dagger})=
+\nabla^2_{\!\bm{\theta}}\, \phi(\wh{\bm{\theta}}|\bm{y})
+$$
+
+and
+
+$$
+\phi(\bm{\theta}|\bm{y})=-\sum_{i=1}^n \log f(y_i|\bm{\theta},\bm{x}_i)
+$$
+
+So at the end we get a sample 
+
+$$
+\widehat{\boldsymbol{\theta}}_{std}(\boldsymbol{y}_1),\ldots\widehat{\boldsymbol{\theta}}_{std}(\boldsymbol{y}_N)
+$$ 
+
+from the  distribution of the standardised MLE (not from the asymptotic normal distribution given in [Proposition 3.7 of the lecture notes](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/9/docs/02-likelihood.html#incorrectly-specified-models).
+
+
+
+Save the sample of stardardised MLE vectors in the rows of a matrix of dimension $N\times 2$. Call this matrix `mles_std_wrong`
+
+
+Plot a histogram of each entry of the stardardised MLEs and compare it with the pdf of a standard normal distribution.
+
+Plot a scatter plot of the pair of stardardised MLEs  and compare it with the contours of a standard  standard normal distribution.
+
+What can you say about the normal approximation to the distribution of the stardardised  MLE? 
+
+
+
+## Solution to Question 4 {-}
+
+```{r}
+KL_fn <- function(theta = c(1, 1), y = 0:500) {
+  KL1 <- sum((dnbinom(y, size = 0.5, mu = 5, log = T) - 
+            dpois(y, exp(theta[1]), log = T)
+          ) * dnbinom(y, size = 0.5, mu = 5, log = F))
+  KL2 <- sum((dnbinom(y, size = 0.5, mu = 30, log = T) - 
+            dpois(y, exp(sum(theta)), log = T)
+          ) * dnbinom(y, size = 0.5, mu = 30, log = F))
+  KL1 + KL2
+}
+
+log_f1_expr <- expr(y * theta1 - log(factorial(y)) - !!mu1_expr)
+log_f2_expr = expr(y * (theta1 + theta2) - log(factorial(y)) - !!mu2_expr)
+log_f1_pack = deriv_pack(log_f1_expr,
+                       namevec = c("theta1"),
+                       data_arg_vec = c("y"))
+log_f2_pack = deriv_pack(log_f2_expr,
+                        namevec = c("theta1", "theta2"),
+                        data_arg_vec = c("y"))
+
+KL_gr <- function(theta = c(1, 1), y = 0:500) {
+  KL1_gr <- sum(log_f1_pack$gr(theta[1], 
+                               data_list = list(y = y),
+                               apply.sum = F) * 
+            dnbinom(y, size = 0.5, mu = 5, log = F))
+  KL2_gr_vec <- log_f2_pack$gr(theta, 
+                               data_list = list(y = y),
+                               apply.sum = F) *
+                dnbinom(y, size = 0.5, mu = 30, log = F)
+  KL2_gr_theta1 <- sum(KL2_gr_vec[,1])
+  KL2_gr_theta2 <- sum(KL2_gr_vec[,2])
+  -c(KL1_gr + KL2_gr_theta1, KL2_gr_theta2)
+}
+
+K_hat <- function(theta) {
+  log_f1_gr <- log_f1_pack$gr(theta[1], data_list = list(
+    y = y_samples[1:100], apply_sum = F)
+  )
+  log_f_gr <- log_f2_pack$gr(theta, data_list = list(
+    y = y_samples[101:200], apply_sum = F)
+  )
+  log_f_gr[,1] <- log_f_gr[, 1] + log_f1_gr
+  t(log_f_gr) %*% log_f_gr
+}
+
+nll_fn_q4 <- function(theta, y) {
+  -sum(c(dpois(y[1:100], exp(theta[1]), log = T),
+         dpois(y[101:200], exp(sum(theta)), log = T)))
+}
+
+nll_gr_q4 <- function(theta, y) {
+  log_f1_gr <- log_f1_pack$gr(theta[1], data_list = list(
+    y = y[1:100]))
+  log_f_gr <- log_f2_pack$gr(theta, data_list = list(
+    y = y[101:200]))
+  log_f_gr[1] <- log_f_gr[1] + log_f1_gr
+  -log_f_gr
+}
+```
+
+```{r theta_stab}
+KL_opt_res <- fit_optim(par_len = 2, fn = KL_fn, gr = KL_gr, 
+                        y = 0:500)
+theta_stab <- KL_opt_res$par
+```
+
+```{r fit_optim_q4, eval = FALSE}
+# opt_res_vec_q4 <- vector("list", N)
+for(i in 1:N) {
+  opt_res_vec_q4[[i]] <- fit_optim(par_len = 2, 
+                                fn = nll_fn_q4, 
+                                gr = nll_gr_q4, 
+                                y = y_samples[i,])
+  # print(i)
+  # if((i %% 100) == 0) {
+  #   save(opt_res_vec_q4, 
+  #        file = glue("opt_res_vec_q4_{i}.RData"))
+  #   print('Saved!')
+  # }
+}
+```
+
+```{r}
+## Question 4
+## remove null values
+mles_st <- matrix(nrow = 9910, ncol = 2)
+
+op4 <- opt_res_vec_q4[sapply(opt_res_vec_q4, is.null) == FALSE ]
+
+for(i in 1:9910)
+{
+  for(j in 1:2)
+  {
+    mles_st[i,j] = op4[[i]]$par[j]
+  }
+}
+
+hist(mles_st, probability = TRUE, ylim=c(0,0.4)) 
+## shift mean of normal distribution
+curve(dnorm(x, mean=2.5), add=TRUE)
+
+
+## scatter plot
+q <- seq(-15, 15, length=250)
+m <- seq(-15, 15, length=250)
+cor4 <- cor(mles_st[,1],mles_st[,2])
+M <- matrix(NA,
+            nrow = 250,
+            ncol = 250)
+
+for (i in seq_along(q)){
+  for (j in seq_along(m)){
+    
+    M[i,j]<- ((2*pi*(1-cor4^2))^(-1/2))*exp(-(((q[i]^2)-(2*q[i]*m[j]*cor4)+(m[j]^2))/(2*(1-cor4^2))))
+    
+  }
+}
+lev <- c(0.01,0.1,0.3,0.5,1)
+plot(theta2, theta3)
+```
+
+
+# Optimisation guidelines {#optim-guidelines}
+
+* You should use at least 100 different random starting points for any optimisation performed. This is to make sure you obtain the smallest value possible (for minimisation) of the objective function. To generate random initial points you can use normal random numbers.
+
+* For each optimisation, you should use the BFGS algorithm and you should provide the gradient function to the algorithm. You can use the R function `optim`. You may use either automatic differentiation via `deriv` or numerical differentiation via the library `numDeriv`.
+
+* You should use appropriate reparametrisations (usually involving $\log$) to perform unconstrained optimisation, that is, the parameters to be optimised over, should not be constrained to lie in a bounded set. 
+ 
+ 
