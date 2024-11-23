@@ -181,9 +181,9 @@ plot_confint_q1_2 = function(opt_res, f = identity, main,
   }
   
   plot(data, pch = 19, main = main)
-  lines(x, f(opt_res_1$par[1] + opt_res_1$par[2] * x), col = "red")
-  lines(x, f(ci_1[,1]), col = "red", lty = 2)
-  lines(x, f(ci_1[,2]), col = "red", lty = 2)
+  lines(x, f(opt_res$par[1] + opt_res$par[2] * x), col = "red")
+  lines(x, f(ci[,1]), col = "red", lty = 2)
+  lines(x, f(ci[,2]), col = "red", lty = 2)
 }
 
 plot_confint_q1_2(opt_res_q1_1, exp, 
@@ -258,26 +258,14 @@ nic_3 = nic(nll_pack_q2_3, opt_res_q2_3)
 
 # Question 2.2
 ngrid = 100
-x <- seq(xlim[1], xlim[2],length = ngrid)
+x <- seq(0, 1,length = ngrid)
 S_full <- solve(opt_res_q2_full$hessian)  
 ci_full <- matrix(NA,
                nrow = ngrid,
                ncol = 2)
-  
-S_1 <- solve(opt_res_q2_1$hessian)  
-ci_1 <- matrix(NA,
-                  nrow = ngrid,
-                  ncol = 2)
 
 S_2 <- solve(opt_res_q2_2$hessian)  
-ci_2 <- matrix(NA,
-               nrow = ngrid,
-               ncol = 2)
-
-S_3 <- solve(opt_res_q2_3$hessian)  
-ci_3 <- matrix(NA,
-               nrow = ngrid,
-               ncol = 2)
+ci_2 <- matrix(NA, nrow = ngrid, ncol = 2)
 
 for (i in 1:ngrid){
   vec.x <- c(1, x[i])
@@ -291,26 +279,37 @@ for (i in 1:ngrid){
 }
 
 est_1 <- opt_res_q2_1$par - x * opt_res_q2_1$par ^ 2
-se_1 <- (1 - 2 * opt_res_q2_1$par * x) / c(opt_res_q2_1$hessian ^ 0.5)
-ci_1 <- c(est_1 - 1.96 * se_1, est_1 + 1.96 * se_1)
+se_1 <- abs(1 - 2 * opt_res_q2_1$par * x) / c(opt_res_q2_1$hessian ^ 0.5)
+ci_1 <- matrix(NA, nrow = ngrid, ncol = 2)
+ci_1[, 1] <- est_1 - 1.96 * se_1
+ci_1[, 2] <- est_1 + 1.96 * se_1
 
-est_1 <- opt_res_q2_1$par - x * opt_res_q2_1$par ^ 2
-se_1 <- sqrt((1 - 2 * opt_res_q2_1$par * x) ^ 2 / opt_res_q2_1$hessian)
-ci_1[i,] <- c(est_1 - 1.96 * se_1, est_1 + 1.96 * se_1)
+est_3 <- opt_res_q2_3$par[1] - x * opt_res_q2_3$par[1] ^ 2
+se_3 <- sqrt(solve(opt_res_q2_3$hessian)[1, 1] * (1 - 2 * opt_res_q2_3$par[1] * x) ^ 2)
+ci_3 <- matrix(NA, nrow = ngrid, ncol = 2)
+ci_3[, 1] <- est_3 - 1.96 * se_3
+ci_3[, 2] <- est_3 + 1.96 * se_3
 
-plot(dataQ2, pch = 19)
-lines(x, 1 / (opt_res_q2_full$par[1] + opt_res_q2_full$par[2] * x), col = "red")
-lines(x, 1 / ci_full[,1], col = "red", lty = 2)
-lines(x, 1 / ci_full[,2], col = "red", lty = 2)
+plot_confint_q1_2(opt_res_q2_full, 
+                  f = function(x) 1/x, 
+                  main = "",
+                  data = dataQ2, 
+                  xlim = c(0, 1))
 
 plot(dataQ2, pch = 19)
 lines(x, 1 / (opt_res_q2_1$par - x * opt_res_q2_1$par ^ 2), col = "red")
+lines(x, 1 / ci_1[,1], col = "red", lty = 2)
+lines(x, 1 / ci_1[,2], col = "red", lty = 2)
 
-plot(dataQ2, pch = 19)
-lines(x, 1 / (opt_res_q2_2$par[1] + opt_res_q2_2$par[2] * x), col = "red")
-lines(x, 1 / ci_2[,1], col = "red", lty = 2)
-lines(x, 1 / ci_2[,2], col = "red", lty = 2)
+plot_confint_q1_2(opt_res_q2_2, 
+                  f = function(x) 1/x, 
+                  main = "",
+                  data = dataQ2, 
+                  xlim = c(0, 1))
 
 plot(dataQ2, pch = 19)
 lines(x, 1 / (opt_res_q2_3$par[1] - x * opt_res_q2_3$par[1] ^ 2), col = "red")
+lines(x, 1 / ci_3[,1], col = "red", lty = 2)
+lines(x, 1 / ci_3[,2], col = "red", lty = 2)
 
+# Question 2.3
