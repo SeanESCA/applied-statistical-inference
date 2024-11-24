@@ -47,7 +47,8 @@ deriv_pack = function(func_expr,
     function.arg = c(namevec, data_arg_vec)
   )
   
-  fn <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1), apply.sum = T) {
+  fn <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1), 
+                 apply.sum = T) {
     theta_list = as.list(theta)
     names(theta_list) = namevec
     aux  <- do.call(deriv_res, c(theta_list, data_list))
@@ -58,7 +59,8 @@ deriv_pack = function(func_expr,
     } 
   }
   
-  gr <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1), apply.sum = T) {
+  gr <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1), 
+                 apply.sum = T) {
     theta_list = as.list(theta)
     names(theta_list) = namevec
     aux  <- do.call(deriv_res, c(theta_list, data_list))
@@ -98,7 +100,7 @@ fit_optim <- function(par_len, nll_pack, data, mean = 0, sd = 10,
               data_list = data,
               method  = method ,
               hessian = hessian),
-        silent = F) # this supresses the red error messages
+        silent = T) # this supresses the red error messages
       
       if(inherits(fit[[i]], "try-error")){
         
@@ -271,8 +273,8 @@ load(url("https://people.bath.ac.uk/kai21/ASI/data/CW24/dataQ2.RData"))
 ## Question 2.1
 
 ```{r Q2.1_setup}
-P21_optim_1 <- P21_optim_2 <- P21_optim_3 <- P21_optim_full <- vector("list", 5)
-names(P21_optim_1) <- names(P21_optim_2) <- names(P21_optim_3) <- names(P21_optim_full) <- c("mle","negloglik","gradient","hessian","NIC")
+P21_optim_1 <- P21_optim_2 <- P21_optim_3 <- P21_optim_full <- P25_optim <- vector("list", 5)
+names(P21_optim_1) <- names(P21_optim_2) <- names(P21_optim_3) <- names(P21_optim_full) <- names(P25_optim) <- c("mle","negloglik","gradient","hessian","NIC")
 
 P21_optim_1
 ```
@@ -346,7 +348,7 @@ nll_pack_q2_3 = deriv_pack(nll_expr_q2_3,
                            c("theta3", "theta4"),
                            theta_init = rep(2, 2))
 opt_res_q2_3 = fit_optim(2, nll_pack_q2_3, dataQ2)
-P21_optim_3$mle = c(opt_res_q2_full$par[1], exp(opt_res_q2_full$par[2]))
+P21_optim_3$mle = c(opt_res_q2_3$par[1], exp(opt_res_q2_3$par[2]))
 P21_optim_3$negloglik = opt_res_q2_3$value
 P21_optim_3$hessian = opt_res_q2_3$hessian
 P21_optim_3$gradient = nll_pack_q2_3$gr(opt_res_q2_3$par, dataQ2)
@@ -450,6 +452,31 @@ colnames(P24_bands_1) <- colnames(P24_bands_2) <-
 head(P24_bands_1)
 ```
 
+## Question 2.5
+
+Based on the NIC for $\mathcal{F}_{1}$ and $\mathcal{F}_{2}$, 
+
+```{r}
+# Increase power of x * theta4 ^ term decreases nic
+# nll_expr_q2_4 = expr(lgamma(exp(-theta4)) - 
+                       # exp(-theta4) * (log(theta4 ^ 2 - x * theta4) - theta4) + 
+                       # (1 - exp(-theta4)) * log(y) + 
+                       # exp(-theta4) * (theta4 ^ 2 - x * theta4) * y)
+nll_expr_q2_4 = expr(lgamma(exp(-theta4)) - 
+                       exp(-theta4) * (log(theta4 ^ 1.6 - x * theta4) - theta4) + 
+                       (1 - exp(-theta4)) * log(y) + 
+                       exp(-theta4) * (theta4 ^ 1.6 - x * theta4) * y)
+nll_pack_q2_4 = deriv_pack(nll_expr_q2_4,
+                           c("theta4"),
+                           theta_init = 0.5)
+opt_res_q2_4 = fit_optim(1, nll_pack_q2_4, dataQ2, sd = 2)
+P25_optim$mle = opt_res_q2_4$par
+P25_optim$negloglik = opt_res_q2_4$value
+P25_optim$hessian = opt_res_q2_4$hessian
+P25_optim$gradient = nll_pack_q2_4$gr(opt_res_q2_4$par, dataQ2)
+P25_optim$NIC = nic(nll_pack_q2_4, opt_res_q2_4)
+P25_optim
+```
 
 # References
 
