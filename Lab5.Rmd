@@ -158,8 +158,7 @@ c(delta - qnorm(0.975) * sqrt(var_delta), delta + qnorm(0.975) * sqrt(var_delta)
 ```
 
 ```{r tau_ci}
-c(exp(opt_res$par[4] - qnorm(0.975) * sqrt(S[4, 4])), 
-  exp(opt_res$par[4] + qnorm(0.975) * sqrt(S[4, 4]))) 
+tau * (1 + 1.96 * c(-1, 1) * S[4, 4] ^ 0.5)
 ```
 
 ## Question 3 

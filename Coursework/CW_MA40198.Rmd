@@ -11,10 +11,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Libraries 
 
-<!--
-Your declared libraries should be included in this code chunk.
--->
-
 ```{r}
 library(rlang)
 ```
@@ -78,7 +74,7 @@ deriv_pack = function(func_expr,
 ```{r fit_optim}
 fit_optim <- function(par_len, nll_pack, data, mean = 0, sd = 10, 
                       method = "BFGS", hessian = T, N_samples = 100, 
-                      seed = 3141592){
+                      silent = T, seed = 3141592){
   
   # set.seed(seed)
   # use set.seed for reproducibility purposes only. But always better to try without it and then settle at the end for reproducibility
@@ -100,7 +96,7 @@ fit_optim <- function(par_len, nll_pack, data, mean = 0, sd = 10,
               data_list = data,
               method  = method ,
               hessian = hessian),
-        silent = T) # this supresses the red error messages
+        silent = silent) # this supresses the red error messages
       
       if(inherits(fit[[i]], "try-error")){
         
@@ -423,18 +419,33 @@ plot_bands(P22_bands_3, dataQ2,
 
 
 ```{r Q2.3}
-# use the following matrices to place the CI limits and estimates
-
-n_grid     <- 1000 
-x          <- seq(0,1,length=n_grid)
+n_grid <- 1000 
+x <- seq(0,1,length=n_grid)
 P23_bands_1 <- P23_bands_2 <- 
-  P23_bands_3 <- P23_bands_full <- matrix(NA,nrow=n_grid,ncol=3)
+  P23_bands_3 <- P23_bands_full <- P25_bands <- matrix(NA,nrow=n_grid,ncol=3)
 colnames(P23_bands_1) <- colnames(P23_bands_2) <- 
-  colnames(P23_bands_3) <- colnames(P23_bands_full) <- c("lower","est","upper")
+  colnames(P23_bands_3) <- colnames(P23_bands_full) <- colnames(P25_bands) <- c("lower","est","upper")
 
 head(P23_bands_1)
 ```
 
+```{r P23_bands_1}
+S_full = solve(opt_res_q2_full$hessian)
+nll_gr_q2_full = nll_pack_q2_full$gr(opt_res_q2_full$par, dataQ2, apply.sum = F)
+Khat_full = crossprod(nll_gr_q2_full)
+cov_full = S_full %*% Khat_full %*% S_full
+
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_full <- crossprod(vec.x, opt_res_q2_full$par[1:2])
+  se_full <- sqrt(crossprod(vec.x, cov_full[1:2, 1:2]) %*% vec.x)
+  P23_bands_full[i,] <- 1/c(est_full + 1.96 * se_full,
+                         est_full,
+                         est_full - 1.96 * se_full)
+}
+
+plot_bands(P23_bands_full, dataQ2, main = "Plot of median for the full model")
+```
 
 ## Question 2.4
 
@@ -454,28 +465,57 @@ head(P24_bands_1)
 
 ## Question 2.5
 
-Based on the NIC for $\mathcal{F}_{1}$ and $\mathcal{F}_{2}$, 
+From [Question 2.1], $\mathcal{F}_{\text{full}}$ had the best NIC of
+$-1368$. Finding functions $g_{\alpha}$, $g_{\beta}$, and $g_{\phi}$ such that
+$g_{\alpha}(\theta_{4}^{*}) = \alpha^{*}$, 
+$g_{\beta}(\theta_{4}^{*}) = \beta^{*}$, and 
+$g_{\phi}(\theta_{4}^{*}) = \phi^{*}$ would give $\mathcal{F}_{4}$ a better NIC
+since the NIC would favour the simpler model $\mathcal{F}_{4}$.
+
+$\mathcal{F}_{2}$ had the next lowest AIC of $-1359$, followed by 
+$\mathcal{F}_{3}$ with an NIC of $-1224$. As such, we considered
+$g_{alpha}(\theta_{4}) = \theta_{4}$, 
+$g_{\beta}(\theta_{4}) = -\theta_{4}^{a}$, 
+$g_{\phi}(\theta_{4}) = \exp(\theta_{4}^{b})$, where $a$ and $b$ are real
+constants. By solving for the conditions mentioned in the previous paragraph, 
+we found that $a \approx 0.75$ and $b \approx 0.5$. 
 
 ```{r}
-# Increase power of x * theta4 ^ term decreases nic
-# nll_expr_q2_4 = expr(lgamma(exp(-theta4)) - 
-                       # exp(-theta4) * (log(theta4 ^ 2 - x * theta4) - theta4) + 
-                       # (1 - exp(-theta4)) * log(y) + 
-                       # exp(-theta4) * (theta4 ^ 2 - x * theta4) * y)
-nll_expr_q2_4 = expr(lgamma(exp(-theta4)) - 
-                       exp(-theta4) * (log(theta4 ^ 1.6 - x * theta4) - theta4) + 
-                       (1 - exp(-theta4)) * log(y) + 
-                       exp(-theta4) * (theta4 ^ 1.6 - x * theta4) * y)
+a = log(-P21_optim_full$mle[2])/log(P21_optim_full$mle[1])
+b = log(log(P21_optim_full$mle[3]))/log(P21_optim_full$mle[1])
+print(paste("a: ", a, "; b: ", b))
+```
+
+With $g_{\beta}(\theta_{4}) = -\theta_{4}^{3/4}$ and
+$g_{\phi}(\theta_{4}) = \exp(\theta_{4}^{1/2})$, $\mathcal{F}_{4}$ achieved
+the lowest NIC of $-1372$.
+
+```{r P25_optim}
+nll_expr_q2_4 = expr(lgamma(exp(-theta4 ^ 0.5)) -
+                       exp(-theta4 ^ 0.5) * (log(theta4 - x * theta4 ^ 0.75) - theta4 ^ 0.5) +
+                       (1 - exp(-theta4 ^ 0.5)) * log(y) +
+                       exp(-theta4 ^ 0.5) * (theta4 - x * theta4 ^ 0.75) * y)
+
 nll_pack_q2_4 = deriv_pack(nll_expr_q2_4,
                            c("theta4"),
                            theta_init = 0.5)
-opt_res_q2_4 = fit_optim(1, nll_pack_q2_4, dataQ2, sd = 2)
+opt_res_q2_4 = fit_optim(1, nll_pack_q2_4, dataQ2, sd = 2, silent = F)
 P25_optim$mle = opt_res_q2_4$par
 P25_optim$negloglik = opt_res_q2_4$value
 P25_optim$hessian = opt_res_q2_4$hessian
 P25_optim$gradient = nll_pack_q2_4$gr(opt_res_q2_4$par, dataQ2)
 P25_optim$NIC = nic(nll_pack_q2_4, opt_res_q2_4)
 P25_optim
+```
+
+```{r P25_bands}
+est_4 <- 1 / (P25_optim$mle - x * P25_optim$mle ^ 0.75)
+se_4 <- abs(1 - 0.75 * x * P25_optim$mle ^ -0.25) * (est_4 ^ 2) / 
+  c(P25_optim$hessian) ^ 0.5
+P25_bands[, 1] <- est_4 - 1.96 * se_4
+P25_bands[, 2] <- est_4 
+P25_bands[, 3] <- est_4 + 1.96 * se_4
+plot_bands(P25_bands, dataQ2, main = "Mean and 95% CI for model 4")
 ```
 
 # References

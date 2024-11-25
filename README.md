@@ -8,16 +8,18 @@ library(glue)
 library(latex2exp)
 
 deriv_pack = function(func_expr, 
-                    namevec = c("theta1", "theta2", "theta3"),
-                    data_arg_vec = c("y"),
-                    theta_init = rep(1, 3)) {
+                      namevec = c("alpha", "beta", "theta"),
+                      data_arg_vec = c("x", "y"),
+                      theta_init = rep(1, 3)) {
   deriv_res <- deriv(
     func_expr,
     namevec = namevec,
-    function.arg = c(namevec, data_arg_vec)
+    function.arg = c(namevec, data_arg_vec),
+    hessian = T
   )
   
-  fn <- function(theta = theta_init, data_list = list("y" = 1), apply.sum = T) {
+  fn <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1), 
+                 apply.sum = T) {
     theta_list = as.list(theta)
     names(theta_list) = namevec
     aux  <- do.call(deriv_res, c(theta_list, data_list))
@@ -28,7 +30,8 @@ deriv_pack = function(func_expr,
     } 
   }
   
-  gr <- function(theta = theta_init, data_list = list("y" = 1), apply.sum = T) {
+  gr <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1), 
+                 apply.sum = T) {
     theta_list = as.list(theta)
     names(theta_list) = namevec
     aux  <- do.call(deriv_res, c(theta_list, data_list))
@@ -39,7 +42,14 @@ deriv_pack = function(func_expr,
     }
   }
   
-  list(fn = fn, gr = gr)
+  hess <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1)) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(deriv_res, c(theta_list, data_list))
+    apply(attr(aux,"hessian"), c(2,3), sum)
+  }
+  
+  list(fn = fn, gr = gr, hess = hess)
 }
 ```
 

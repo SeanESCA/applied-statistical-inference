@@ -48,3 +48,9 @@ nll_pack_q2_2$fn(c(theta, beta), list("x" = x, "y" = y))
 
 -dgamma(y, exp(-theta), (alpha - 1 * alpha ^ 2) * exp(-theta), log = T)
 nll_pack_q2_3$fn(c(alpha, theta), list("x" = 1, "y" = y))
+
+# Q2.5
+unique(dataQ2$x)
+mean_invQ2 = aggregate(list(y = dataQ2$y), list(x = dataQ2$x), function(x) 1 / mean(x))
+fit = lm(y ~ x, mean_invQ2)
+summary(fit)
