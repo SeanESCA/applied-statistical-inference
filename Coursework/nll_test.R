@@ -49,6 +49,81 @@ nll_pack_q2_2$fn(c(theta, beta), list("x" = x, "y" = y))
 -dgamma(y, exp(-theta), (alpha - 1 * alpha ^ 2) * exp(-theta), log = T)
 nll_pack_q2_3$fn(c(alpha, theta), list("x" = 1, "y" = y))
 
+# Q2.4 (Test using exercise from Lab 5)
+mu_expr = expr(theta1)
+sigma_expr = expr(exp(theta2))
+delta_expr = expr(theta3)
+tau_expr = expr(exp(theta4))
+expr1 = expr((y - !!mu_expr)/!!sigma_expr)
+asinh_expr = expr(log(!!expr1 + (1 + (!!expr1) ^ 2) ^ 0.5))
+S_expr = expr(sinh(!!tau_expr * !!asinh_expr - !!delta_expr))
+C_expr = expr((1 + (!!S_expr) ^ 2) ^ 0.5)
+nll_test_expr = expr(-log(!!tau_expr) - log(!!C_expr) + 0.5 * (!!S_expr) ^ 2 + log(!!sigma_expr) + 0.5 * log(2 * pi) + 0.5 * log(1 + (!!expr1) ^ 2))
+nll_test_pack = deriv_pack(nll_test_expr,
+                           c("theta1", "theta2", "theta3", "theta4"),
+                           c("y"),
+                           rep(2, 4))
+opt_res_test = fit_optim(4, nll_test_pack, list(y = y_sample_q1), silent = F)
+
+n <- 500
+y_sample_q6 <- rlogis(n,location = 0, scale= 1)
+
+KL_test_pack = function(nll_pack) {
+  fn_integrand = function(y, theta) {
+    (nll_pack$fn(theta, list("y" = y), apply.sum = F) +
+      dlogis(y, log = T)) * dlogis(y)
+  }
+  gr_integrand = function(y, theta, col_int = 1) {
+    aux = nll_pack$gr(theta, list("y" = y), apply.sum = F) *
+      dlogis(y)
+    aux[, col_int]
+  }
+  KL_fn = function(theta) {
+    integrate(fn_integrand, -50, 50, theta = theta)$value
+  }
+  
+  KL_gr = function(theta) {
+    res = 1:length(theta)
+    for(j in res) {
+      res[j] = integrate(gr_integrand, -50, 50,
+                              theta = theta, col_int = j)$value
+    }
+    res
+  }
+  
+  list(fn = KL_fn, gr = KL_gr)
+}
+
+KL_pack_5 = KL_test_pack(nll_test_pack)
+optim(c(0, 0, 0, 0),
+      KL_pack_5$fn,
+      hessian = T,
+      control=list(trace=10,REPORT=1))
+
+test = function(y, theta) {
+  nll_test_pack$fn(theta, list("y" = y), apply.sum = F)
+}
+integrate(test, -10, 10, theta = c(1, 1, 1, 1))
+
+optim_q6_0<-
+  optim(par=c(0,0,0,0),
+      fn=KL_pack_5$fn,
+      hessian = T,
+      control=list(trace=10,REPORT=1))
+optim_q6<-fit_optim(4, KL_pack_5, NULL, silent = F)
+
+xx <- seq(-10,10,length=100)
+yy_dens <- rep(NA,100)
+yy_logis <- dens_logis(xx) 
+
+for (i in 1:100){
+  yy_dens[i] <- exp(-nll_test_pack$fn(optim_q6$par, list(y = xx[i])))
+}
+
+
+plot(xx,yy_dens,type="l")
+lines(xx,yy_logis,lty=2)  
+
 # Q2.5
 unique(dataQ2$x)
 mean_invQ2 = aggregate(list(y = dataQ2$y), list(x = dataQ2$x), function(x) 1 / mean(x))
