@@ -1,0 +1,929 @@
+---
+title: "MA40198 Coursework"
+author: "Names here"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries 
+
+<!--
+Your declared libraries should be included in this code chunk.
+-->
+
+```{r}
+library(rlang)
+library(numDeriv)
+```
+
+
+
+# Part I
+
+```{r}
+#run to save the data frame 'dataQ1' on to the R environment
+load(url("https://people.bath.ac.uk/kai21/ASI/data/CW24/dataQ1.RData"))
+```
+
+## Question 1.1
+
+
+```{r Q1.1}
+# use the following lists to place the MLE info
+P2_optim_1 <- P2_optim_2 <- P2_optim_3 <- P2_optim_4 <- vector("list", 5)
+names(P2_optim_1) <- names(P2_optim_2) <- names(P2_optim_3) <- names(P2_optim_4) <- c("mle","negloglik","gradient","hessian","AIC")
+
+P2_optim_1
+
+```
+
+This function will be used throughout the coursework
+```{r deriv_pack}
+## Here we create a function "deriv_pack" to evaluate the value of a     function and its derivative: 
+## Inputs: function expression, list of parameters, dataset
+## Outputs: value of function, value of gradient of function
+
+deriv_pack = function(func_expr, 
+                      namevec = c("alpha", "beta", "theta"),
+                      data_arg_vec = c("x", "y"),
+                      theta_init = rep(1, 3)) {
+  deriv_res <- deriv(
+    func_expr,
+    namevec = namevec,
+    function.arg = c(namevec, data_arg_vec)
+  )
+  
+  fn <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1), 
+                 apply.sum = T) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(deriv_res, c(theta_list, data_list))
+    if(apply.sum) {
+      sum(as.numeric(aux))
+    } else {
+      c(aux)
+    } 
+  }
+  
+  gr <- function(theta = theta_init, data_list = list("x" = 1, "y" = 1), 
+                 apply.sum = T) {
+    theta_list = as.list(theta)
+    names(theta_list) = namevec
+    aux  <- do.call(deriv_res, c(theta_list, data_list))
+    if(apply.sum) {
+      apply(attr(aux, "gradient"), 2, sum)
+    } else {
+      attr(aux, "gradient")
+    }
+  }
+  
+  list(fn = fn, gr = gr)
+}
+``` 
+
+This function will be used throughout the coursework
+```{r fit_optim}
+## Here we create a function 'fit_optim' to determine the MLE for a given    model:
+## Inputs: par_len(number of parameters), nll_pack(output of deriv_pack              for model), data(data set), 'mean' and 'sd' for generating                random samples from standard normal distribution, 'N_samples'             for number of random samples
+## Outputs: standard output of 'optim' function
+
+
+fit_optim <- function(par_len, nll_pack, data, mean = 0, sd = 10, 
+                      method = "BFGS", hessian = T, N_samples = 100, 
+                      silent = T, seed = 3141592){
+  
+  # set.seed(seed)
+  # use set.seed for reproducibility purposes only. But always better to try without it and then settle at the end for reproducibility
+  
+  fit <- vector("list", length = N_samples)
+  for (i in 1:N_samples){
+    
+    stop_crit <-T
+    
+    #tries until it finds an optimisation with no upfront error . this guarantees 'N_samples' optimisation are done
+    
+    while(stop_crit){
+      
+      # sometimes initial point is too far, which throws an straight error, hence the use of 'try'
+      fit[[i]] <- try( 
+        optim(par = rnorm(par_len, mean = mean, sd = sd),
+              fn  = nll_pack$fn,
+              gr  = nll_pack$gr,
+              data_list = data,
+              method  = method ,
+              hessian = hessian),
+        silent = silent) # this supresses the red error messages
+      
+      if(inherits(fit[[i]], "try-error")){
+        
+        stop_crit <-T # if error, tries again
+        
+      } else {
+        
+        stop_crit <-F # if no error, continues to next step
+      }
+    }
+    
+    # check for numerical convergence first 
+    no_convergence <- fit[[i]]$convergence > 0
+    
+    # checks if asymptotic variances are possible to obtain
+    no_variance <- inherits(try(solve(fit[[i]]$hessian),
+                                silent = T), 
+                            "try-error")
+    
+    null_variance <- F
+    NA_variance   <- F
+    
+    if (!no_variance){
+      # checks if asymptotic variance are NaN
+      NA_variance <- as.logical(sum(is.nan(diag(solve(fit[[i]]$hessian)))))
+      
+      if(!NA_variance){
+        # checks if asymptotic variance are zero up to machine precision
+        null_variance <- as.logical(sum(diag(solve(fit[[i]]$hessian))< .Machine$double.eps ^ 0.5))
+      }
+    }
+    
+    fail <- no_variance | no_convergence | NA_variance | null_variance 
+    if (fail){
+      fit[[i]]$value <- NA
+    }
+    
+  } 
+  
+  extract_negloglik <- function(optim_object){
+    optim_object$value
+  }
+  # selects the optimisation with minimum negative loglikelihood
+  nll_vals <- lapply(X = fit, FUN = extract_negloglik)
+  fit[[which.min(nll_vals)]] # return the final selected optimisation
+}
+```
+
+
+```{r aic}
+## Here we create a function "aic" to compute the AIC:
+## Inputs: nll_pack as defined before, opt_res for the output of fit_optim
+## Outputs: the AIC value of the model"nll_pack" and "opt_res", where        "opt_res" is the MLE estimate obtainedfrom 'fit_optim'
+## Output: The AIC value of the model
+aic = function(nll_pack, opt_res, data = dataQ1) {
+  par = opt_res$par
+  2 * (nll_pack$fn(par, data) + length(par))
+}
+```
+
+
+```{r}
+## The function 'set_P2_optim' to store the required values:
+## Inputs: P2_optim for the existing list, nll_pack and opt_res as defined    before
+## Outputs: The MLE parameters, the MLE value, the MLE hessian, the MLE               gradient, the AIC of the negative log-likelihood
+set_P2_optim = function(P2_optim, nll_pack, opt_res) {
+  P2_optim$mle = c(opt_res$par[1:2], exp(opt_res$par[3]))
+  P2_optim$negloglik = opt_res$value
+  P2_optim$hessian = opt_res$hessian
+  P2_optim$gradient = nll_pack$gr(opt_res$par, dataQ1)
+  P2_optim$AIC = aic(nll_pack, opt_res)
+  P2_optim
+}
+```
+
+For all four models, sigma was reparameterised as e^{theta}
+
+First model
+
+Here we have:
+'nll_expr_q1_1', 'nll_pack_q1_1', 'opt_res_q1_1' as the 
+expression, 'deriv_pack' and 'fit_optim' respectiveley  for the normal distribution model of Y|x with median(or mean) of (alpha1 + beta1*x) and
+standard deviation of sigma1 * exp(alpha1+beta1*x)
+Note: alpha1 is written as 'alpha', beta1 is written as 'beta' and sigma1 is written as 'theta'
+
+```{r P2_optim_1, message=FALSE, warning=FALSE}
+nll_expr_q1_1 = expr(0.5 * log(2 * pi) + theta + alpha + beta * x + 
+                       0.5 * (y - exp(alpha + beta * x)) ^ 2 / 
+                       exp(2 * (theta + alpha + beta * x)))
+nll_pack_q1_1 = deriv_pack(nll_expr_q1_1)
+opt_res_q1_1 = fit_optim(3, nll_pack_q1_1, dataQ1)
+set_P2_optim(P2_optim_1, nll_pack_q1_1, opt_res_q1_1)
+```
+
+
+Second model
+
+Here we have:
+'nll_expr_q1_2', 'nll_pack_q1_2', 'opt_res_q1_2' as the 
+expression, 'deriv_pack' and 'fit_optim' respectiveley for the normal distribution model log(Y)|x with median(or mean) of (alpha2 + beta2*x) and standard deviation of sigma2 as well as log(Y)|x
+Note: alpha2 is written as 'alpha', beta2 is written as 'beta' and sigma2 is written as 'theta'
+
+```{r P2_optim_2, message=FALSE, warning=FALSE}
+nll_expr_q1_2 = expr(0.5 * log(2 * pi) + theta + 
+                       0.5 * (log(y) - alpha - beta * x) ^ 2 / exp(2 * theta))
+nll_pack_q1_2 = deriv_pack(nll_expr_q1_2)
+opt_res_q1_2 = fit_optim(3, nll_pack_q1_2, dataQ1)
+set_P2_optim(P2_optim_2, nll_pack_q1_2, opt_res_q1_2)
+```
+
+Third model
+
+Here we have:
+'nll_expr_q1_3', 'nll_pack_q1_3', 'opt_res_q1_3' as the 
+expression, 'deriv_pack' and 'fit_optim' respectiveley for the logistic distribution model log(Y)|x with median(or mean) of (alpha3 + beta3*x) and scale parameter of sigma3 as well as log(Y)|x
+Note: alpha3 is written as 'alpha', beta3 is written as 'beta' and sigma3 is written as 'theta'
+
+```{r P2_optim_3, message=FALSE, warning=FALSE}
+z_expr_q1_3 = expr((log(y) - alpha - beta * x) / exp(theta))
+nll_expr_q1_3 = expr(!!z_expr_q1_3 + 2 * log((1 + exp(-!!z_expr_q1_3))) + theta)
+nll_pack_q1_3 = deriv_pack(nll_expr_q1_3)
+opt_res_q1_3 = fit_optim(3, nll_pack_q1_3, dataQ1)
+set_P2_optim(P2_optim_3, nll_pack_q1_3, opt_res_q1_3)
+```
+
+Fourth model
+
+Here we have:
+'nll_expr_q1_4', 'nll_pack_q1_4', 'opt_res_q1_4' as the expression, 'deriv_pack' and 'fit_optim' respectively for the weibull distribution model Y|x with median of exp(alpha4 + beta4*x) and standard deviation of sigma4
+Note: alpha4 is written as 'alpha', beta4 is written as 'beta' and sigma4 is written as 'theta'
+
+```{r P2_optim_4, message=FALSE, warning=FALSE}
+nll_expr_q1_4 = expr(-log(log(2)) - theta + exp(theta) * (alpha + beta * x) + (1 - exp(theta)) * log(y) + log(2) * (y / exp(alpha + beta * x)) ^ exp(theta))
+nll_pack_q1_4 = deriv_pack(nll_expr_q1_4)
+opt_res_q1_4 = fit_optim(3, nll_pack_q1_4, dataQ1)
+set_P2_optim(P2_optim_4, nll_pack_q1_4, opt_res_q1_4)
+```
+
+Based on the outputs, we see that fitted model with the lowest AIC is 
+the logistic distribution with median of (alpha3+beta3*x) and scale
+parameter of sigma3. So according to the AIC, the best model is model 3.
+
+## Question 1.2
+
+
+```{r Q1.2}
+# use the following matrices to place the CI limits and estimates
+
+n_grid     <- 1000 
+x          <- seq(1,15,length=n_grid)
+P2_bands_1 <- P2_bands_2 <- 
+  P2_bands_3 <- P2_bands_4 <- matrix(NA,nrow=n_grid,ncol=3)
+colnames(P2_bands_1) <- colnames(P2_bands_2) <- 
+  colnames(P2_bands_3) <- colnames(P2_bands_4) <- c("lower","est","upper")
+
+head(P2_bands_1)
+```
+
+We calculate the confidence interval in each case using the Jacobian of the mean function and computing the asymptotic variance as 
+Jg * (I ^ (-1))  * Jg where Jg is the Jacobian evaluated at the MLE and (I^(-1)) is the inverse of the hessian. This is from proposition 3.3 in the lecture notes.
+
+First model
+
+The 95% confidence interval for the mean function of the normal distribution with median(or mean) = (alpha1 + beta1 * x) and 
+standard deviation = sigma1 * exp(alpha1+beta1*x)
+
+The Jacobian in this case is 
+(exp(alpha1 + beta1 * x), x * (exp(alpha1 + beta1*x)), 0 )
+where alph1a and beta1 are the MLE estimates of 'alpha1' and 'beta1'
+'S1' is the inverse of the hessian
+
+```{r}
+S1 <- solve(opt_res_q1_1$hessian) 
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est <- exp(crossprod(vec.x, opt_res_q1_1$par[1:2]))
+  j <- c(est, vec.x[2]*est,0)
+  se <- sqrt(j %*% S1 %*% j)
+  P2_bands_1[i,1] <- est - 1.96 * se
+  P2_bands_1[i,2] <- est
+  P2_bands_1[i,3] <- est + 1.96 *se
+}
+
+plot(y~x, dataQ1, ylim=c(0,10), main="95% CI for Y|x ~ N(exp(alpha1+beta1*x),sigma1*exp(aplha1+beta1*x))", xlab="x", ylab="Mean function")
+lines(x, P2_bands_1[,1], col="red")
+lines(x, P2_bands_1[,2], col="green")
+lines(x, P2_bands_1[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upperer"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+Second model
+
+The 95% confidence inetrval for the log normal distribution with 
+median(or mean) = (alpha2 + beta2*x) and standard deviation = sigma2
+
+The Jacobian in this case is 
+(1, x , 0 )
+```{r}
+S2 <- solve(opt_res_q1_2$hessian) 
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est <- crossprod(vec.x, opt_res_q1_2$par[1:2])
+  j <- c(1, vec.x[2],0)
+  se <- sqrt(j %*% S2 %*% j)
+  P2_bands_2[i,1] <- est - 1.96 * se
+  P2_bands_2[i,2] <- est
+  P2_bands_2[i,3] <- est + 1.96 *se
+}
+
+plot(y~x, dataQ1, ylim=c(0,10), main="log(Y)|x ~ N(alpha2+beta2*x,sigma2", xlab="x", ylab="Mean function")
+lines(x, P2_bands_2[,1], col="red")
+lines(x, P2_bands_2[,2], col="green")
+lines(x, P2_bands_2[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+Third model
+
+The 95% confidence interval for the log logistic distribution with
+median(or mean)=(alpha3 + beta3*x) and scale parameter=sigma3
+
+The Jacobian in this case is 
+(1, x , 0 )
+```{r}
+S3 <- solve(opt_res_q1_3$hessian) 
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est <- crossprod(vec.x, opt_res_q1_3$par[1:2])
+  j <- c(1, vec.x[2],0)
+  se <- sqrt(j %*% S3 %*% j)
+  P2_bands_3[i,1] <- est - 1.96 * se
+  P2_bands_3[i,2] <- est
+  P2_bands_3[i,3] <- est + 1.96 *se
+}
+
+plot(y~x, dataQ1, ylim=c(0,10), main="95% Ci for log(Y)|x ~ N(alpha3+beta3*x,sigma3)", xlab="x", ylab="Mean function")
+lines(x, P2_bands_3[,1], col="red")
+lines(x, P2_bands_3[,2], col="green")
+lines(x, P2_bands_3[,3], col="blue")
+legend("topleft", legend=c("Upper bound", "Mean", "Lower bound"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+Fourth model
+
+The 95% confidence interval for the weibull distribution with median=exp(alpha4 + beta4*x) and scale parameter=sigma4
+
+The Jacobian in this case is 
+(exp(alpha4 + beta4 * x), x * (exp(alpha4 + beta4*x)), 0 )
+where alpha and beta1 are the MLE estimates of 'alpha' and 'beta1'
+'S1' is the inverse of the hessian
+```{r}
+S4 <- solve(opt_res_q1_4$hessian) 
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est <- exp(crossprod(vec.x, opt_res_q1_4$par[1:2]))
+  j <- c(est, vec.x[2]*est,0)
+  se <- sqrt(j %*% S4 %*% j)
+  P2_bands_4[i,1] <- est - 1.96 * se
+  P2_bands_4[i,2] <- est
+  P2_bands_4[i,3] <- est + 1.96 *se
+}
+
+plot(y~x, dataQ1, ylim=c(0,10), main="95% CI for Y|x ~ N(exp(alpha4+beta4*x),sigma3", xlab="x", ylab="Mean function")
+lines(x, P2_bands_4[,1], col="red")
+lines(x, P2_bands_4[,2], col="green")
+lines(x, P2_bands_4[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+# Part II
+
+```{r}
+#run to save the data frame 'dataQ2'  on to the R environment
+load(url("https://people.bath.ac.uk/kai21/ASI/data/CW24/dataQ2.RData"))
+```
+
+## Question 2.1
+
+```{r Q2.1_setup}
+P21_optim_1 <- P21_optim_2 <- P21_optim_3 <- P21_optim_full <- vector("list", 5)
+names(P21_optim_1) <- names(P21_optim_2) <- names(P21_optim_3) <- names(P21_optim_full) <- c("mle","negloglik","gradient","hessian","NIC")
+
+P21_optim_1
+
+```
+
+
+```{r nic}
+## We create a function 'nic' to compute the NIC for model:
+## Input: nll_pack, opt_res and data as defined in Q1
+## Output: The NIC value for the model
+
+nic = function(nll_pack, opt_res, data = dataQ2) {
+  aux = nll_pack$gr(opt_res$par, data, apply.sum = F)
+  2 * (opt_res$value + sum(diag(solve(opt_res$hessian) %*% crossprod(aux))))
+}
+```
+
+For given values of the mean=mu and variance=phi*(mu^2) to compute the shape parameter(alpha) and rate parameter(lambda) of the gamma
+distribution we have that the mean=alpha/lambda and 
+variance = alpha/(lamda^2) for a gamma distribution. Substituting the given values and rearranging we obtain alpha=1/theta and 
+lambda=1/(phi*mu). This will be applied for the expression of each of
+the negative log likelihood of the gamma distribution model in each case.
+
+Full model
+
+Here we compute the MLE, negative log-likelhood, hessian, gradient and
+NIC values for the fitted full Gamma distribution with mean=(1/alpha-beta*x) and variance=phi*(mu^2)
+'phi' is written as 'theta' here
+
+```{r P21_optim_full, message=FALSE, warning=FALSE}
+nll_expr_q2_full = expr(lgamma(exp(-theta)) - 
+                          exp(-theta) * (log(alpha + beta * x) - theta) + 
+                          (1 - exp(-theta)) * log(y) + 
+                          exp(-theta) * (alpha + beta * x) * y)
+nll_pack_q2_full = deriv_pack(nll_expr_q2_full)
+opt_res_q2_full = fit_optim(3, nll_pack_q2_full, dataQ2)
+P21_optim_full$mle = c(opt_res_q2_full$par[1:2],      exp(opt_res_q2_full$par[3]))
+P21_optim_full$negloglik = opt_res_q2_full$value
+P21_optim_full$hessian = opt_res_q2_full$hessian
+P21_optim_full$gradient = nll_pack_q2_full$gr(opt_res_q2_full$par, dataQ2)
+P21_optim_full$NIC = nic(nll_pack_q2_full, opt_res_q2_full)
+P21_optim_full
+```
+
+First model
+
+Here we compute the MLE, negative log-likelhood, hessian, gradient and
+NIC values for the fitted first Gamma distribution with 
+mean=(1/theta1-(theta1^2)*x) and variance=exp(theta1)*(mu^2)
+
+```{r P21_optim_1, message=FALSE, warning=FALSE}
+nll_expr_q2_1 = expr(lgamma(exp(-theta1)) - 
+                     exp(-theta1) * (log(theta1 - x * theta1 ^ 2) -                            theta1) + (1 - exp(-theta1)) * log(y) + 
+                     exp(-theta1) * (theta1 - x * theta1 ^ 2) * y)
+nll_pack_q2_1 = deriv_pack(nll_expr_q2_1,
+                           c("theta1"),
+                           theta_init = 2)
+opt_res_q2_1 = fit_optim(1, nll_pack_q2_1, dataQ2)
+P21_optim_1$mle = opt_res_q2_1$par
+P21_optim_1$negloglik = opt_res_q2_1$value
+P21_optim_1$hessian = opt_res_q2_1$hessian
+P21_optim_1$gradient = nll_pack_q2_1$gr(opt_res_q2_1$par, dataQ2)
+P21_optim_1$NIC = nic(nll_pack_q2_1, opt_res_q2_1)
+P21_optim_1
+```
+
+Second model
+
+Here we compute the MLE, negative log-likelihood, hessian, gradient and
+NIC values for the fitted second Gamma distribution with 
+mean=(1/theta2-tau2 * x) and variance=exp(theta2)*(mu^2)
+
+```{r P21_optim_2, message=FALSE, warning=FALSE}
+nll_expr_q2_2 = expr(lgamma(exp(-theta2)) - 
+                       exp(-theta2) * (log(theta2 + tau2 * x) - theta2) + 
+                       (1 - exp(-theta2)) * log(y) + 
+                       exp(-theta2) * (theta2 + tau2 * x) * y)
+nll_pack_q2_2 = deriv_pack(nll_expr_q2_2,
+                           c("theta2", "tau2"),
+                           theta_init = rep(1, 2))
+opt_res_q2_2 = fit_optim(2, nll_pack_q2_2, dataQ2)
+P21_optim_2$mle = opt_res_q2_2$par
+P21_optim_2$negloglik = opt_res_q2_2$value
+P21_optim_2$hessian = opt_res_q2_2$hessian
+P21_optim_2$gradient = nll_pack_q2_2$gr(opt_res_q2_2$par, dataQ2)
+P21_optim_2$NIC = nic(nll_pack_q2_2, opt_res_q2_2)
+P21_optim_2
+```
+
+For $\mathcal{F}_{3}$, $\delta_{3}$ is reparametrised as $\exp(\theta_{4})$.
+
+Third model
+
+Here we compute the MLE, negative log-likelihood, hessian, gradient and
+NIC values for the fitted third Gamma distribution with 
+mean=(1/theta3-(tau3^2)*x) and variance=delta3*(mu^2)
+delta3 is written as "theta4"
+
+```{r P21_optim_3, message=FALSE, warning=FALSE}
+nll_expr_q2_3 = expr(lgamma(exp(-theta4)) - 
+                       exp(-theta4) * (log(theta3 - x * theta3 ^ 2) - theta4) + 
+                       (1 - exp(-theta4)) * log(y) + 
+                       exp(-theta4) * (theta3 - x * theta3 ^ 2) * y)
+nll_pack_q2_3 = deriv_pack(nll_expr_q2_3,
+                           c("theta3", "theta4"),
+                           theta_init = rep(2, 2))
+opt_res_q2_3 = fit_optim(2, nll_pack_q2_3, dataQ2)
+P21_optim_3$mle = c(opt_res_q2_3$par[1], exp(opt_res_q2_3$par[2]))
+P21_optim_3$negloglik = opt_res_q2_3$value
+P21_optim_3$hessian = opt_res_q2_3$hessian
+P21_optim_3$gradient = nll_pack_q2_3$gr(opt_res_q2_3$par, dataQ2)
+P21_optim_3$NIC = nic(nll_pack_q2_3, opt_res_q2_3)
+P21_optim_3
+```
+
+## Question 2.2 
+
+
+```{r Q2.2}
+# use the following matrices to place the CI limits and estimates
+
+n_grid     <- 1000 
+x          <- seq(0,1,length=n_grid)
+P22_bands_1 <- P22_bands_2 <- 
+  P22_bands_3 <- P22_bands_full <- matrix(NA,nrow=n_grid,ncol=3)
+colnames(P22_bands_1) <- colnames(P22_bands_2) <- 
+  colnames(P22_bands_3) <- colnames(P22_bands_full) <- c("lower","est","upper")
+
+head(P22_bands_1)
+```
+
+
+Here we store the inverse hessian of the optimsiation for each model
+```{r P22_bands}
+S_full <- solve(opt_res_q2_full$hessian)
+S_1 <- solve(opt_res_q2_1$hessian) 
+S_2 <- solve(opt_res_q2_2$hessian)
+S_3 <- solve(opt_res_q2_3$hessian)
+```
+
+Here we find the variance for the function mu=(1/alpha+beta*x) 
+in each case through the jacobian and inverse hessian. Since the 
+model is correctly specified we can use the formula (J * (I^(-1)) * J) from Proposition 3.2 to find the asymptotic variance where 'J' is jacobian and 'I' is the hessian.
+
+Full model
+
+For the full model the Jacobian is:
+(-((1/(alpha+beta*x))^2), (-x*((1/(alpha+beta*x))^2),0)
+
+```{r}
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_full <- crossprod(vec.x, opt_res_q2_full$par[1:2])
+  J_full <- c(-(est_full^(-2)), -(est_full^(-2))*vec.x[2],0)
+  se_full <- sqrt(J_full %*% S_full %*% J_full)
+  P22_bands_full[i,1] <- (1/(est_full)) - 1.96 * se_full
+  P22_bands_full[i,2] <- 1/est_full
+  P22_bands_full[i,3] <- (1/(est_full)) + 1.96 * se_full
+}
+
+plot(y~x, dataQ2, ylim=c(0,10), main="95% CI for Gamma model with mu=(1/(alpha-beta1*x))", xlab="x", ylab="Mean function")
+lines(x, P22_bands_full[,1], col="red")
+lines(x, P22_bands_full[,2], col="green")
+lines(x, P22_bands_full[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+First model
+
+For the first model the Jacobian is:
+(-((1/(theta1-(theta1^2)*x))^2)*(1-2*theta1*x))
+
+```{r}
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_1 <- crossprod(vec.x, c(opt_res_q2_1$par, -(opt_res_q2_1$par^2)))
+  J_1 <- c(-(est_1^(-2))*(1-2*opt_res_q2_1$par*vec.x[2]))
+  se_1 <- sqrt(J_1 %*% S_1 %*% J_1)
+  P22_bands_1[i,1] <- (1/(est_1)) - 1.96 * se_1
+  P22_bands_1[i,2] <- 1/est_1
+  P22_bands_1[i,3] <- (1/(est_1)) + 1.96 * se_1
+}
+
+plot(y~x, dataQ2, ylim=c(0,10), main="95% CI for Gamma model with mu=(1/(theta1-(theta1^2*x))", xlab="x", ylab="Mean function")
+lines(x, P22_bands_1[,1], col="red")
+lines(x, P22_bands_1[,2], col="green")
+lines(x, P22_bands_1[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+Second model
+For the second model the Jacobian is:
+(-((1/(theta2+tau2*x))^2), (-x*((1/(theta2+tau2*x))^2))
+
+```{r}
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_2 <- crossprod(vec.x, opt_res_q2_2$par[1:2])
+  J_2 <- c(-(est_2^(-2)), -(est_2^(-2))*vec.x[2])
+  se_2 <- sqrt(J_2 %*% S_2 %*% J_2)
+  P22_bands_2[i,1] <- (1/(est_2)) - 1.96 * se_2
+  P22_bands_2[i,2] <- 1/est_2
+  P22_bands_2[i,3] <- (1/(est_2)) + 1.96 * se_2
+}
+plot(y~x, dataQ2, ylim=c(0,10), main="95% CI for Gamma model with mu=(1/(theta2-tau2*x))", xlab="x", ylab="Mean function")
+lines(x, P22_bands_2[,1], col="red")
+lines(x, P22_bands_2[,2], col="green")
+lines(x, P22_bands_2[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+Third model
+For the third model the Jacobian is:
+(-((1/(theta3-(theta3^2)*x))^2)*(1-2*theta3*x),0)
+
+```{r}
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_3 <- crossprod(vec.x, c(opt_res_q2_3$par[1], -(opt_res_q2_3$par[1]^2)))
+  J_3 <- c(-(est_3^(-2)), -(est_3^(-2))*(1-2*opt_res_q2_3$par[1]*vec.x[2]))
+  se_3 <- sqrt(J_3 %*% S_3 %*% J_3)
+  P22_bands_3[i,1] <- (1/(est_3)) - 1.96 * se_3
+  P22_bands_3[i,2] <- 1/est_3
+  P22_bands_3[i,3] <- (1/(est_3)) + 1.96 * se_3
+}
+
+plot(y~x, dataQ2, ylim=c(0,10), main="95% CI for Gamma model with mu=(1/(theta3-(theta3^2*x))", xlab="x", ylab="Mean function")
+lines(x, P22_bands_3[,1], col="red")
+lines(x, P22_bands_3[,2], col="green")
+lines(x, P22_bands_3[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+## Question 2.3
+
+
+```{r Q2.3}
+# use the following matrices to place the CI limits and estimates
+
+n_grid     <- 1000 
+x          <- seq(0,1,length=n_grid)
+P23_bands_1 <- P23_bands_2 <- 
+  P23_bands_3 <- P23_bands_full <- matrix(NA,nrow=n_grid,ncol=3)
+colnames(P23_bands_1) <- colnames(P23_bands_2) <- 
+  colnames(P23_bands_3) <- colnames(P23_bands_full) <- c("lower","est","upper")
+
+head(P23_bands_1)
+```
+
+To compute the variance of the incorrectly specified distribution,
+we use proposition 3.7 with the fact that the least worst theta estimate
+is unknown so K-hat is found by the sum of the crossproduct of the
+gradient of log densities and J is the observed fisher information matrix. We derive the variance in a similar way through substituting (J^(-1) * K-hat * J^(-1))for the Fisher Information matrix. This leaves the variance in each case as J-g * (J * K-hat * J) * J-g where J-g is the Jacobian of the function.
+
+Full Model
+
+```{r P23_bands_1}
+S_full = solve(opt_res_q2_full$hessian)
+nll_gr_q2_full = nll_pack_q2_full$gr(opt_res_q2_full$par, dataQ2, apply.sum = F)
+Khat_full = crossprod(nll_gr_q2_full)
+cov_full = S_full %*% Khat_full %*% S_full
+
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_full <- crossprod(vec.x, opt_res_q2_full$par[1:2])
+  J_full <- c(-(est_full^(-2)), -(est_full^(-2))*vec.x[2],0)
+  se_full <- sqrt(J_full %*% cov_full %*% J_full)
+  P23_bands_full[i,1] <- (1/(est_full)) - 1.96 * se_full
+  P23_bands_full[i,2] <- 1/est_full
+  P23_bands_full[i,3] <  (1/(est_full)) + 1.96 * se_full
+}
+
+plot(y~x, dataQ2, ylim=c(0,10), main="95% CI for Mispecified Gamma model with mu=(1/(alpha-beta*x)", xlab="x", ylab="Mean function")
+lines(x, P23_bands_full[,1], col="red")
+lines(x, P23_bands_full[,2], col="green")
+lines(x, P23_bands_full[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+First model
+
+```{r}
+nll_gr_q2_1 = nll_pack_q2_1$gr(opt_res_q2_1$par, dataQ2, apply.sum = F)
+Khat_1 = crossprod(nll_gr_q2_1)
+cov_1 = S_1 %*% Khat_1 %*% S_1
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_1 <- crossprod(vec.x, c(opt_res_q2_1$par, -(opt_res_q2_1$par^2)))
+  J_1 <- c(-(est_1^(-2))*(1-2*opt_res_q2_1$par*vec.x[2]))
+  se_1 <- sqrt(J_1 %*% cov_1 %*% J_1)
+  P23_bands_1[i,1] <- (1/(est_1)) - 1.96 * se_1
+  P23_bands_1[i,2] <- 1/est_1
+  P23_bands_1[i,3] <- (1/(est_1)) + 1.96 * se_1
+}
+plot(y~x, dataQ2, ylim=c(0,10), main="95% CI for Gamma model with mu=(1/(theta1-(theta1^2)*x))", xlab="x", ylab="Mean function")
+lines(x, P23_bands_1[,1], col="red")
+lines(x, P23_bands_1[,2], col="green")
+lines(x, P23_bands_1[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+
+```
+
+Second model
+```{r}
+nll_gr_q2_2 = nll_pack_q2_2$gr(opt_res_q2_2$par, dataQ2, apply.sum = F)
+Khat_2 = crossprod(nll_gr_q2_2)
+cov_2 = S_2 %*% Khat_2 %*% S_2
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_2 <- crossprod(vec.x, opt_res_q2_2$par[1:2])
+  J_2 <- c(-(est_2^(-2)), -(est_2^(-2))*vec.x[2])
+  se_2 <- sqrt(J_2 %*% cov_2 %*% J_2)
+  P23_bands_2[i,1] <- (1/(est_2)) - 1.96 * se_2
+  P23_bands_2[i,2] <- 1/est_2
+  P23_bands_2[i,3] <- (1/(est_2)) + 1.96 * se_2
+}
+
+plot(y~x, dataQ2, ylim=c(0,10), main="95% CI for Gamma model with mu=(1/(theta2-tau2*x))", xlab="x", ylab="Mean function")
+lines(x, P23_bands_1[,1], col="red")
+lines(x, P23_bands_1[,2], col="green")
+lines(x, P23_bands_1[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+```
+
+Third model
+```{r}
+nll_gr_q2_3 = nll_pack_q2_3$gr(opt_res_q2_3$par, dataQ2, apply.sum = F)
+Khat_3 = crossprod(nll_gr_q2_3)
+cov_3 = S_3 %*% Khat_3 %*% S_3
+for (i in 1:n_grid){
+  vec.x <- c(1, x[i])
+  est_3 <- crossprod(vec.x, c(opt_res_q2_3$par[1], -(opt_res_q2_3$par[1]^2)))
+  J_3 <- c(-(est_3^(-2)), -(est_3^(-2))*(1-2*opt_res_q2_3$par[1]*vec.x[2]))
+  se_3 <- sqrt(J_3 %*% cov_3 %*% J_3)
+  P23_bands_3[i,1] <- (1/(est_3)) - 1.96 * se_3
+  P23_bands_3[i,2] <- 1/est_3
+  P23_bands_3[i,3] <- (1/(est_3)) + 1.96 * se_3
+}
+
+plot(y~x, dataQ2, ylim=c(0,10), main="95% CI for Mispecified Gamma model with mu=(1/(theta3-(theta3^2)*x))", xlab="x", ylab="Mean function")
+lines(x, P23_bands_3[,1], col="red")
+lines(x, P23_bands_3[,2], col="green")
+lines(x, P23_bands_3[,3], col="blue")
+legend("topleft", legend=c("lower", "est", "upper"), lty=c(1,1,1), col=c("red","green","blue"), cex=0.5)
+
+```
+
+
+## Question 2.4
+
+
+```{r Q2.4}
+# use the following matrices to place the CI limits and estimates
+
+n_grid     <- 1000 
+x          <- seq(0,1,length=n_grid)
+P24_bands_1 <- P24_bands_2 <- 
+  P24_bands_3 <- P24_bands_full <- matrix(NA,nrow=n_grid,ncol=3)
+colnames(P24_bands_1) <- colnames(P24_bands_2) <- 
+  colnames(P24_bands_3) <- colnames(P24_bands_full) <- c("lower","est","upper")
+
+head(P24_bands_1)
+```
+
+## Here, we create a function 'KL_pack' which computes the value of the
+## KL function and its derivative for given values of "nll_pack" with
+## the correctly specified full model as the true distribution
+```{r KL_pack, warning=FALSE}
+## Here, we create a function 'KL_pack' which computes the value of the
+## KL function and its derivative:
+## Input: nll_pack as defined before
+## Output: 'KL_fn' as the value of the KL function and 'KL_gr' as the                 value of the KL gradient. The true distribution which this is             is computed is a Gamma distirbution with shape parameter of 2             and rate parameter of 3/(4-2*x)
+KL_pack = function(nll_pack) {
+  ## Here we create a function 'fn_integrand' to compute the expression to      be integrated for the KL divergence
+  ## Input: data of 'y' and 'x', paramters of 'theta'
+  ## Output: the value of the expression
+  fn_integrand = function(y, x, theta) {
+    (nll_pack$fn(theta, list("x" = x, "y" = y), apply.sum = F) +
+       dgamma(y, 2, (4 - 2 * x)/3, log = T)) * 
+      dgamma(y, 2, (4 - 2 * x)/3)
+  }
+  ## Here we create a function 'fn_integrand' to compute the derovative        of the expression of the KL divergence
+  ## Input: data of 'y' and 'x', paramters of 'theta'
+  ## Output: the value of the derivative of the KL divergence
+  gr_integrand = function(y, x, theta, col_int = 1) {
+    aux = nll_pack$gr(theta, list("x" = x, "y" = y), apply.sum = F) *
+      dgamma(y, 2, (4 - 2 * x)/3)
+    aux[, col_int]
+  }
+  ## Here we have the function 'KL_fn' to compute the KL divergence
+  ## Input: inital paramters 'theta', datset of dataQ2
+  ## Output: The KL divergence
+  KL_fn = function(theta, data_list = dataQ2) {
+    # Although unused, the data_list argument is added for compatibility with fit_optim.
+    res = 1:10
+    for(i in res) {
+      res[i] = integrate(fn_integrand, 0, 10, x = i/10, 
+                         theta = theta)$value
+    }
+    sum(res)
+  }
+  ## Here we have the function 'KL_gr' to compute the gradient of the KL       divergence
+  ## Input: initial parameters 'theta', dataset of dataQ2
+  ## Output: The derivative of the KL divergence
+  KL_gr = function(theta, data_list = dataQ2) {
+    # Although unused, the data_list argument is added for compatibility with fit_optim.
+    n = length(theta)
+    res = matrix(NA, nrow = 10, ncol = n)
+    for(i in 1:10) {
+      for(j in 1:n) {
+        res[i, j] = integrate(gr_integrand, 0, 10, x = i/10, 
+                              theta = theta, col_int = j)$value
+      }
+    }
+    apply(res, 2, sum)
+  }
+  
+  list(fn = KL_fn, gr = KL_gr)
+}
+```
+
+## In each case we pass the values of 'KL-pack' through 'fit_optim'
+## to obtain the least worst value of theta
+
+
+##First model
+```{r KL1, message=FALSE, warning=FALSE}
+KL_pack_1 = KL_pack(nll_pack_q2_1)
+opt_res_q2_kl1 = fit_optim(1, KL_pack_1, dataQ2, mean = 0.5, sd = 0.25, silent = F)
+for(i in 1:n_grid){
+  vec.x <- c(1,x[i])
+  theta <- opt_res_q2_kl1$par
+  est <- crossprod(vec.x, c(theta,-(theta^2)))
+  P24_bands_1[i,2] <- 1/est
+}
+plot(y~x, dataQ2, ylim=c(0,10), main=" Mispecified Gamma first model - Q2_4 )", xlab="x", ylab="Mean functions")
+lines(x, P24_bands_1[,2], col="red")
+lines(x, P22_bands_full[,2], col="green")
+```
+
+
+## Second model
+```{r KL2, message=FALSE, warning=FALSE}
+KL_pack_2 = KL_pack(nll_pack_q2_2)
+opt_res_q2_kl2 = fit_optim(2, KL_pack_2, dataQ2, mean = 0.5, sd = 0.25, silent = F)
+for(i in 1:n_grid){
+  vec.x <- c(1,x[i])
+  est <- crossprod(vec.x, c(opt_res_q2_kl2$par[1],opt_res_q2_kl2$par[2]))
+  P24_bands_2[i,2] <- 1/est
+}
+plot(y~x, dataQ2, ylim=c(0,10), main=" Mispecified Gamma second model - Q2_4 )", xlab="x", ylab="Mean functions")
+lines(x, P24_bands_2[,2], col="red")
+lines(x, P22_bands_full[,2], col="green")
+```
+
+## Third model
+```{r KL3, message=FALSE, warning=FALSE}
+KL_pack_3 = KL_pack(nll_pack_q2_3)
+opt_res_q2_kl3 = fit_optim(2, KL_pack_3, dataQ2, mean = 0.5, sd = 0.25, silent = F)
+for(i in 1:n_grid){
+  vec.x <- c(1,x[i])
+  theta <- opt_res_q2_kl3$par[1]
+  est <- crossprod(vec.x, c(theta,-(theta^2)))
+  P24_bands_3[i,2] <- 1/est
+}
+plot(y~x, dataQ2, ylim=c(0,10), main=" Mispecified Gamma third model - Q2_4 )", xlab="x", ylab="Mean functions")
+lines(x, P24_bands_3[,2], col="red")
+lines(x, P22_bands_full[,2], col="green")
+```
+
+## Question 2.5
+
+From [Question 2.1], $\mathcal{F}_{\text{full}}$ had the best NIC of
+$-1368$. Finding functions $g_{\alpha}$, $g_{\beta}$, and $g_{\phi}$ such that
+$g_{\alpha}(\theta_{4}^{*}) = \alpha^{*}$, 
+$g_{\beta}(\theta_{4}^{*}) = \beta^{*}$, and 
+$g_{\phi}(\theta_{4}^{*}) = \phi^{*}$ would give $\mathcal{F}_{4}$ a better NIC
+since the NIC would favour the simpler model $\mathcal{F}_{4}$.
+
+$\mathcal{F}_{2}$ had the next lowest AIC of $-1359$, followed by 
+$\mathcal{F}_{3}$ with an NIC of $-1224$. As such, we considered
+$g_{alpha}(\theta_{4}) = \theta_{4}$, 
+$g_{\beta}(\theta_{4}) = -\theta_{4}^{a}$, 
+$g_{\phi}(\theta_{4}) = \exp(\theta_{4}^{b})$, where $a$ and $b$ are real
+constants. By solving for the conditions mentioned in the previous paragraph, 
+we found that $a \approx 0.75$ and $b \approx 0.5$. 
+
+```{r}
+a = log(-P21_optim_full$mle[2])/log(P21_optim_full$mle[1])
+b = log(log(P21_optim_full$mle[3]))/log(P21_optim_full$mle[1])
+print(paste("a: ", a, "; b: ", b))
+```
+
+With $g_{\beta}(\theta_{4}) = -\theta_{4}^{3/4}$ and
+$g_{\phi}(\theta_{4}) = \exp(\theta_{4}^{1/2})$, $\mathcal{F}_{4}$ achieved
+the lowest NIC of $-1372$.
+
+```{r P25_optim}
+nll_expr_q2_4 = expr(lgamma(exp(-theta4 ^ 0.5)) -
+                       exp(-theta4 ^ 0.5) * (log(theta4 - x * theta4 ^ 0.75) - theta4 ^ 0.5) +
+                       (1 - exp(-theta4 ^ 0.5)) * log(y) +
+                       exp(-theta4 ^ 0.5) * (theta4 - x * theta4 ^ 0.75) * y)
+
+nll_pack_q2_4 = deriv_pack(nll_expr_q2_4,
+                           c("theta4"),
+                           theta_init = 0.5)
+opt_res_q2_4 = fit_optim(1, nll_pack_q2_4, dataQ2, sd = 2, silent = F)
+P25_optim$mle = opt_res_q2_4$par
+P25_optim$negloglik = opt_res_q2_4$value
+P25_optim$hessian = opt_res_q2_4$hessian
+P25_optim$gradient = nll_pack_q2_4$gr(opt_res_q2_4$par, dataQ2)
+P25_optim$NIC = nic(nll_pack_q2_4, opt_res_q2_4)
+P25_optim
+```
+
+```{r P25_bands, message=FALSE, warning=FALSE}
+P25_bands = mean_confint(P25_bands, 
+                         expr(1/(theta4 - x * theta4 ^ 0.75)),
+                         c("theta4"), 
+                         opt_res_q2_4)
+plot_bands(P25_bands, dataQ2, main = "Mean and 95% CI for model 4")
+```
+# References
+
+<!-- Here you should list the external references consulted if other than the course resources-->
+
+1. Item 1
+
+2.  Item 1
