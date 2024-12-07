@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+load("C:\\Users\\soon\\Documents\\GitHub\\applied-statistical-inference\\.RData")
 ```
 
 # Libraries 
@@ -762,11 +763,17 @@ $\frac{\alpha^{*} + \beta^{*}x}{\phi^{*}} = \frac{4 - 2x}{3}$, respectively.
 By Definition 3.11, $\boldsymbol{\theta}^{\dagger}$ can be found numerically 
 for each model by minimising the KL divergence.
 
-```{r P24_optim}
+```{r P24_optim, eval=FALSE}
 P24_optim_1 <- P24_optim_2 <- P24_optim_3 <- vector("list", 3)
 names(P24_optim_1) <- names(P24_optim_2) <- names(P24_optim_3) <- 
   c("mle","kl","gradient")
 P24_optim_1
+```
+
+```{r P24_optim_blank, echo=FALSE}
+P24_optim_blank <- vector("list", 3)
+names(P24_optim_blank) <- c("mle","kl","gradient")
+P24_optim_blank
 ```
 
 ```{r P24_bands}
@@ -852,7 +859,7 @@ KL_pack = function(nll_pack) {
 }
 ```
 
-```{r P24_optim_1, warning=FALSE, error=FALSE}
+```{r P24_optim_1, warning=FALSE, error=FALSE, eval=FALSE}
 # Run the optimisations under model 1.
 KL_pack_1 = KL_pack(nll_pack_q2_1)
 opt_res_q2_kl1 = fit_optim(1, KL_pack_1, dataQ2)
@@ -861,6 +868,11 @@ opt_res_q2_kl1 = fit_optim(1, KL_pack_1, dataQ2)
 P24_optim_1$mle = p = opt_res_q2_kl1$par
 P24_optim_1$kl = opt_res_q2_kl1$value
 P24_optim_1$gradient = KL_pack_1$gr(p)
+P24_optim_1
+```
+
+```{r echo=FALSE}
+p = opt_res_q2_kl1$par
 P24_optim_1
 ```
 
@@ -879,7 +891,7 @@ legend("topleft",
   col = c("blue", "red"))
 ```
 
-```{r P24_optim_2, warning=FALSE, error=FALSE}
+```{r P24_optim_2, warning=FALSE, error=FALSE, eval=FALSE}
 # Run the optimisations under model 2.
 KL_pack_2 = KL_pack(nll_pack_q2_2)
 opt_res_q2_kl2 = fit_optim(2, KL_pack_2, dataQ2)
@@ -888,6 +900,10 @@ opt_res_q2_kl2 = fit_optim(2, KL_pack_2, dataQ2)
 P24_optim_2$mle = opt_res_q2_kl2$par
 P24_optim_2$kl = opt_res_q2_kl2$value
 P24_optim_2$gradient = KL_pack_2$gr(opt_res_q2_kl2$par)
+P24_optim_2
+```
+
+```{r echo=FALSE}
 P24_optim_2
 ```
 
@@ -907,7 +923,7 @@ legend("topleft",
   col = c("blue", "red"))
 ```
 
-```{r P24_optim_3, warning=FALSE, error=FALSE}
+```{r P24_optim_3, warning=FALSE, error=FALSE, eval=FALSE}
 # Run the optimisations under model 3.
 KL_pack_3 = KL_pack(nll_pack_q2_3)
 opt_res_q2_kl3 = fit_optim(2, KL_pack_3, dataQ2)
@@ -916,6 +932,11 @@ opt_res_q2_kl3 = fit_optim(2, KL_pack_3, dataQ2)
 P24_optim_3$mle = opt_res_q2_kl3$par
 P24_optim_3$kl = opt_res_q2_kl3$value
 P24_optim_3$gradient = KL_pack_3$gr(opt_res_q2_kl3$par)
+P24_optim_3
+```
+
+
+```{r echo=FALSE}
 P24_optim_3
 ```
 

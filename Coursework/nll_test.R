@@ -129,3 +129,28 @@ unique(dataQ2$x)
 mean_invQ2 = aggregate(list(y = dataQ2$y), list(x = dataQ2$x), function(x) 1 / mean(x))
 fit = lm(y ~ x, mean_invQ2)
 summary(fit)
+
+# Q2.3
+
+S_1 = solve(opt_res_q2_1$hessian)
+nll_gr_q2_1 = nll_pack_q2_1$gr(opt_res_q2_1$par, dataQ2, apply.sum = F)
+Khat_1 = crossprod(nll_gr_q2_1)
+cov_1 = S_1 %*% Khat_1 %*% S_1
+
+theta1 = opt_res_q2_1$par
+theta.hat = c(theta1 = theta1)
+se_theta1 = sqrt(solve(opt_res_q2_1$hessian))
+var_theta1 = solve(opt_res_q2_1$hessian)
+se_S = sqrt(deltavar(1/(theta1 - x * theta1 ^ 2),
+                     meanval = theta.hat,
+                     Sigma = cov_1))
+test = P23_bands_1
+est_1 = 1/(theta1 - x * theta1 ^ 2)
+test[, 1] = est_1 - 1.96 * se_S
+test[, 2] = est_1
+test[, 3] = est_1 + 1.96 * se_S
+plot(dataQ2, pch = 19)
+lines(x, test[, 1])
+lines(x, test[, 2])
+lines(x, test[, 3])
+plot_bands(test, dataQ2, main = "")

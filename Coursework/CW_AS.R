@@ -18,7 +18,7 @@ for (i in 1:n_grid){
   
   vec.x <- c(1, x[i])
   
-  est_1 <- crossprod(vec.x, c(opt_res_q2_1$par, -(opt_res_q2_1$par^2)-(cov_1^2)))
+  est_1 <- crossprod(vec.x, c(opt_res_q2_1$par, -(opt_res_q2_1$par^2)))
   
   se_1 <- sqrt(crossprod(vec.x, cov_11) %*% vec.x)
   
@@ -29,10 +29,7 @@ for (i in 1:n_grid){
                          est_1 - 1.96 * se_1)
   
 }
-plot(y~x, dataQ2)
-lines(x, P23_bands_1[,1], col="red")
-lines(x, P23_bands_1[,2], col="green")
-lines(x, P23_bands_1[,3], col="blue")
+plot_bands(P23_bands_1, dataQ2, "Plot")
 
 S_2 = solve(opt_res_q2_2$hessian)
 
@@ -58,10 +55,7 @@ for (i in 1:n_grid){
   
 }
 
-plot(y~x, dataQ2)
-lines(x, P23_bands_2[,1], col="red")
-lines(x, P23_bands_2[,2], col="green")
-lines(x, P23_bands_2[,3], col="blue")
+plot_bands(P23_bands_2, dataQ2, "Plot")
 
 S_3 = solve(opt_res_q2_3$hessian)
 
@@ -89,11 +83,7 @@ for (i in 1:n_grid){
                          est_1 - 1.96 * se_1)
   
 }
-plot(y~x, dataQ2)
-lines(x, P23_bands_3[,1], col="red")
-lines(x, P23_bands_3[,2], col="green")
-lines(x, P23_bands_3[,3], col="blue")
-
+plot_bands(P23_bands_3, dataQ2, "Plot")
 
 n_grid <- 100
 x <- seq(0,1,length=n_grid)
@@ -117,8 +107,8 @@ plot(y~x, dataQ2, ylim=c(0,5))
 lines(x, mean_KL1, col="red")
 lines(x, mean_KLfull, col="green")
 
-KL_pack_2 = KL_pack(nll_pack_q2_2)
-opt_res_q2_kl2 = fit_optim(2, KL_pack_2, dataQ2, mean = 0.5, sd = 0.25, silent = F)
+# KL_pack_2 = KL_pack(nll_pack_q2_2)
+# opt_res_q2_kl2 = fit_optim(2, KL_pack_2, dataQ2, mean = 0.5, sd = 0.25, silent = F)
 n_grid <- 100
 x <- seq(0,1,length=n_grid)
 mean_KL2   <-rep(NA,n_grid)
@@ -132,8 +122,8 @@ plot(y~x, dataQ2)
 lines(x, mean_KL2, col="red")
 lines(x, mean_KLfull, col="green")
 
-KL_pack_3 = KL_pack(nll_pack_q2_3)
-opt_res_q2_kl3 = fit_optim(2, KL_pack_3, dataQ2, mean = 0.5, sd = 0.25, silent = F)
+# KL_pack_3 = KL_pack(nll_pack_q2_3)
+# opt_res_q2_kl3 = fit_optim(2, KL_pack_3, dataQ2, mean = 0.5, sd = 0.25, silent = F)
 n_grid <- 100
 x <- seq(0,1,length=n_grid)
 mean_KL3   <-rep(NA,n_grid)
