@@ -1,0 +1,543 @@
+---
+title: 'MA40198: Applied Statistical Inference'
+subtitle: "Lab 2: Quasi-Newton optimisation algorithms"
+author: "Group X: your names here"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# BFGS quasi-Newton algorithm
+
+Consider minimisation of an objective function $\phi(\boldsymbol{\theta})$
+where $\boldsymbol{\theta}\in R^p$.
+For a given:
+
+- initial point $\boldsymbol{\boldsymbol{\theta}}_0$ 
+- initial positive definite matrix $\boldsymbol{B}_0$
+
+the BFGS algorithm iterations are given by:
+
+$$
+\boldsymbol{\boldsymbol{\theta}}_{k+1}=\boldsymbol{\boldsymbol{\theta}}_{k}+\alpha_k\,\boldsymbol{\Delta}_k 
+$$
+
+where  $\alpha_k>0$ is the step-length, $\boldsymbol{\Delta}_k$ is given by: 
+
+$$
+\boldsymbol{\Delta}_k=-\boldsymbol{B}_k\,\nabla_{\!\boldsymbol{\theta}} \phi(\boldsymbol{\theta}_k)
+$$
+
+and  $\{\boldsymbol{B}_{k}\}$ are symmetric positive definite matrices given by the iteration:
+
+$$
+\boldsymbol{B}_{k+1}=
+\left(\boldsymbol{I}-
+\frac{ \boldsymbol{\Delta}_k\boldsymbol{\eta}_k^T}{\boldsymbol{\eta}_k^T\boldsymbol{\Delta}_k}\right)\boldsymbol{B}_k\left(\boldsymbol{I}-\frac{\boldsymbol{\eta}_k\boldsymbol{\Delta}_k^T}{\boldsymbol{\eta}_k^T\boldsymbol{\Delta}_k}\right)+\alpha_k\,\frac{\boldsymbol{\Delta}_k\boldsymbol{\Delta}_k^T}{\boldsymbol{\eta}_k^T\boldsymbol{\Delta}_k}
+$$
+
+where  
+
+$$
+\boldsymbol{\eta}_k=\nabla_{\!\boldsymbol{\theta}} \phi(\boldsymbol{\boldsymbol{\theta}}_{k+1})-\nabla_{\!\boldsymbol{\theta}} \phi(\boldsymbol{\boldsymbol{\theta}}_{k})
+$$ 
+
+The main idea is that the matrices $\{\boldsymbol{B}_k\}$ play the role of  the inverse of the Hessian matrix at each iteration in Newton's algorithm. The advantage of this new algorithm is that we do not need to compute the Hessian nor to solve a linear system as Newton's algorithm requires.
+
+
+Below you can find generic code to run the BFGS algorithm to answer the following questions.
+
+
+```{r}
+#| code-fold: show 
+BFGS<-function(par , # vector of starting values
+               fn  , # objective function
+               gr  , # function to compute the gradient 
+               hess, # function to compute the Hessian 
+                      # Only to compute distance to approximate Hessian
+               B  , # initial inverse Hessian approximation
+               control=list(maxit    = 1000,
+                            abstol   = 1e-5,
+                            maxit_bt = 100), # control parameters
+               ...){ #  can pass extra arguments to 'fn' and `gr`  via ...  "the ellipsis"
+   k    <- 1
+  
+  # convergence indicator (0 = converged successfully, 1 = max iteration reached)
+  conv <- 0  
+  
+  p            <- length(par) # dimension of space 
+  
+  par_current  <- par
+  
+  fn_current   <- fn(par_current,...) # evaluate objective function
+  
+  grad_current <- gr(par_current,...) # evaluate gradient 
+  
+  hess_current <- hess(par_current,...) # evaluate exact Hessian (Only to compute distance to approximate Hessian)
+  
+  # note additional arguments are passed on using the ellipsis ...
+  
+  # other initialisations
+  
+  par_seq        <- matrix(NA,nrow=control$maxit,ncol=p) #sequence of iterations
+  par_seq[k,]    <- par_current
+  k_backtracking   <- rep(NA,control$maxit)                # sequence of backtracking iterations
+
+ 
+  while(norm(grad_current,type="2")>control$abstol){ # stopping criterion
+    
+  Delta <- -B %*% grad_current # computes descent direction
+  
+   alpha         <- 1   # initial step length
+  
+   par_proposed  <- par_current + alpha*Delta
+  
+  fn_proposed   <- fn(par_proposed,...) # evaluate objective fun at proposed point
+  
+  
+  
+   
+  # backtracking
+
+  
+ k_bt <- 0 # backtracking iteration counter
+  
+  # maxit_bt is the maximum number of backtracking iterations
+  
+  while ((fn_proposed >= fn_current)&(k_bt < control$maxit_bt)){
+    
+    k_bt           <- k_bt+1 # counter for the number of backtracking iterations
+    
+    alpha          <- alpha/2
+    
+   par_proposed  <- par_current + alpha*Delta
+    
+   fn_proposed   <- fn(par_proposed,...) 
+   
+  }# End of backtracking
+    
+  
+  k_backtracking[k]<-k_bt
+ 
+  # updating
+  
+  grad_old     <- grad_current 
+  
+  par_current  <- par_proposed
+  
+  fn_current   <- fn_proposed
+  
+  grad_current <- gr(par_current,...)
+  
+  hess_current <- hess(par_current,...)
+  
+  eta          <- grad_current - grad_old
+  
+  rho <- 1/as.numeric(crossprod(eta,Delta)) 
+  # uses as.numeric to convert from a matrix of dimension 1 x 1 to a scale  
+  
+  # approximation to inverse Hessian
+  B   <- (diag(p)-rho*tcrossprod(Delta,eta))%*%B%*%(diag(p)-rho*tcrossprod(eta,Delta)) +  alpha*rho* tcrossprod(Delta)
+  
+  k   <- k+1
+  
+  # storage of iterations info
+  
+  par_seq[k,]      <- par_current 
+  
+  if (k == control$maxit){
+    
+    conv <-1
+    
+    break  # breaks while loop if maximum number of iterations is reached
+    
+  }
+  
+} 
+  
+return(list(par           = par_current,
+            value         = fn_current,
+            convergence   = conv,
+            iterations    = k,
+            par_seq       = par_seq[1:k,],
+            inv_hess      = B,
+            backtracks    = k_backtracking[1:k]))
+}
+```
+
+
+# Questions
+
+## Question 1 
+
+**AIDS epidemic in Belgium.** 
+
+The following data are reported AIDS cases in Belgium, in the early stages of am epidemic.
+
+
+|  Year | 1981 | 1982 | 1983 | 1984 | 1985 | 1986 | 1987 | 1988 | 1989 | 1990 | 1991 | 1992 | 1993 |
+|:-----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|
+| Cases |  12  |  14  |  33  |  50  |  67  |  74  |  123 |  141 |  165 |  204 |  253 |  246 |  240 |
+
+
+One important question, early in such epidemics, is whether control measures are beginning to have an impact or whether the disease is continuing to spread essentially unchecked. A simple model for unchecked growth leads to an *exponential increase* model. The model says that the number of cases $y_i$ is an observation of an independent Poisson random variable, with expected value $\mu_i = \exp(\theta^*_1+\theta^*_2\,t_i)$ where $t_i$ is the number of years since 1980.
+
+
+* Starting at the point $\boldsymbol{\theta}_0^T=(\log(5),0.5)$. Use the above BFGS function to verify that the algorithm finds  the maximum likelihood estimate $\hat{\boldsymbol{\theta}}^T \approx (3.14059,0.2021212)$. How many iterations did it take to converge? Plot the trajectory of the iterations over the contour plot of the function. How does this compare to the results obtain using Newton's iteration in Lab 1. You may use automatic differentiation as described in [Appendix B of the Lecture Notes](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/6/docs/07-optimisation-in-R.html#sec-automatic-differentiation) to compute the gradient function.
+
+* Try all of the above again with different starting values of  $\boldsymbol{\theta}_0$ and/or $\boldsymbol{B}_0$. Did you find the same minimum?
+
+* The final iteration $\boldsymbol{B}_{k_{final}}$ at the minimum $\hat{\boldsymbol{\theta}}$ found, is an approximation to the estimated Hessian
+$$
+\nabla^2_{\!\boldsymbol{\theta}}\,\phi(\hat{\boldsymbol{\theta}}|\boldsymbol{\boldsymbol{\mathcal Y}})
+$$
+Compare the entries of $\boldsymbol{B}_{k_{final}}$ with those of $\nabla^2_{\!\boldsymbol{\theta}}\,\phi(\hat{\boldsymbol{\theta}}|\boldsymbol{\boldsymbol{\mathcal Y}})$ where the latter can be computed using automatic differentiation.
+
+## Solution to Question 1
+
+Your answer here 
+
+```{r}
+tdat<-1:13
+ydat<-c(12,14,33,50,67,74,123,141,165,204,253,246,240)
+Data <- data.frame(t=tdat, y=ydat)
+expr <- expression(-y*(theta1+theta2*t)+(exp(theta1+theta2*t)+lgamma(y+1)) # this is only the negative log-density 
+)
+aux <- deriv(expr,c("theta1","theta2"),function.arg=c("theta1","theta2","t","y"),hessian=TRUE) 
+
+fn <- function(theta,t,y) {
+  res <- aux(theta[1],theta[2],t,y)
+  sum(as.numeric(res)) 
+}
+gr <- function(theta,t,y) {
+  res <- aux(theta[1],theta[2],t,y)
+  apply(attr(res,"gradient"),2,sum)
+}
+hess <- function(theta,t,y) {
+  res <- aux(theta[1],theta[2],t,y)
+  apply(attr(res,"hessian"),c(2,3),sum)
+}
+
+res<-BFGS(par=c(log(5), 0.5),
+     fn=fn,
+     gr=gr,
+     hess=hess,
+     B=diag(2),
+     t=tdat,
+     y=ydat)
+
+res
+
+theta1_grid <- seq(0,4,length=100)
+theta2_grid <- seq(0.1,0.5,length=100)
+
+```
+
+```{r,error=TRUE}
+
+for (i in 1:100){
+  for (j in 1:100){
+    M[i,j]<-fn(theta = c(theta1=theta1_grid[i],
+                         theta2=theta2_grid[j]),
+               t     = t,
+               y     = y)
+  }
+}
+
+
+```
+
+**KAI: THis throws an error , see below for the correct answer**
+
+```{r}
+M<-matrix(NA,100,100)
+for (i in 1:100){
+  for (j in 1:100){
+    M[i,j]<-fn(theta = c(theta1=theta1_grid[i],
+                         theta2=theta2_grid[j]),
+               t     = tdat,
+               y     = ydat)
+  }
+}
+```
+
+
+
+```{r}
+
+contour(x = theta1_grid,
+        y = theta2_grid,
+        levels=c(90,100,150,200,300,500,800,1000),
+        z = M,
+        xlab=expression(theta[1]),
+        ylab=expression(theta[2]))
+
+abline(h=0.202,lty=2,lwd=0.5)
+abline(v=3.14,lty=2,lwd=0.5)
+
+
+## KAI I completed your code here
+## 
+theta_seq = res$par_seq
+it.stop <-res$iterations
+###
+points(x   = theta_seq [,1],
+       y   = theta_seq [,2],
+       col = "orange",
+       pch = 16)
+
+arrows(x0     = theta_seq [1:(it.stop -1),1],
+       y0     = theta_seq [1:(it.stop -1),2],
+       x1     = theta_seq [2:(it.stop ),1],
+       y1     = theta_seq [2:(it.stop ),2],
+       col    = "orange",
+       length = 0.1)
+
+opt2<-BFGS(par=c(1, 0.56),
+     fn=fn,
+     gr=gr,
+     hess=hess,
+     B=diag(x=2,nrow=2,ncol=2),
+     t=tdat,
+     y=ydat)
+
+opt2
+## Similar results for different value of theta and B
+```
+
+
+
+## Question 2
+
+`optim` function in `R` performs minimsation of a given objective function using the BFGS algorithm without having to specify $\boldsymbol{B}_0$. See [Appendix B of the Lecture Notes](https://moodle.bath.ac.uk/pluginfile.php/2633371/mod_resource/content/6/docs/07-optimisation-in-R.html#default-optimisation-in-r) for details
+
+* For the AIDS epidemic dataset, code-up a function to evaluate the negative log-likelihood and another function to evaluate the corresponding gradient in a format that is suitable to pass onto `optim`.  In each function, the arguments should be:  
+
+  -  `theta`, the vector of parameters $\boldsymbol{\theta}=(\theta_1,\theta_2)^T$, 
+
+  - `t`, the vector of years since 1980  
+
+  - `y` the vector with the number of  AIDS cases for each year 
+
+* Use `optim` to find the maximum likelihood estimator of $\boldsymbol{\theta}^*=(\theta^*_1,\theta^*_2)^T$ using BFGS and with initial value $\theta_0=(\log(5),0.5)^T$. How many iterations did it take to converge? What are differences with the results given by the  BFGS function in Question 1? 
+
+* `optim` will return the final iteration $\boldsymbol{B}_{k_{final}}$ at the minimum $\hat{\boldsymbol{\theta}}$ found by adding the option `hessian = TRUE` when calling `optim`. Compare the entries of $\boldsymbol{B}_{k_{final}}$ with those of $\nabla^2_{\!\boldsymbol{\theta}}\,\phi(\hat{\boldsymbol{\theta}}|\boldsymbol{\boldsymbol{\mathcal Y}})$
+
+
+## Solution to Question 2
+
+Your answer here 
+
+```{r}
+nll <- function(theta, data){
+  sum(-data$y*(theta[1]+theta[2]*data$t)+exp(theta[1]+theta[2]*data$t)+lgamma(data$y+1))
+}
+
+grad       <- function(theta, data)
+ {
+   g <-rep(NA,2)
+  g[1]<--sum(data$y-exp(theta[1]+theta[2]*data$t))
+  g[2]<--sum(data$y*data$t-data$t*exp(theta[1]+theta[2]*data$t))
+  
+  return(g=g)
+}
+optim(par=c(log(5),0.5), fn = nll, gr=grad, method="BFGS", control=list(maxit=1000, abstol=1e-5), data = Data, hessian=T)
+## Difference in that BFGS shows number of iterations while optim shows the number of counts for
+(BFGS(par=c(log(5), 0.5),fn=fn, gr=gr, hess=hess, B=diag(2), t=tdat,y=ydat)$inv_hess)^(-1)
+## the values of optim are different to BFGS in that they are roughly ten times smaller for each entry
+```
+
+
+
+## Question 3
+
+Plot the data against the estimated mean (by maximum likelihood) of the number of cases each year and judge the fit.
+
+
+## Solution to Question 3
+
+Your answer here 
+
+```{r}
+#install.packages("ggplot2")
+library(ggplot2)
+#install.packages("tidyverse")
+library(tidyverse)
+ glm_fit_poisson <- glm(formula = y ~ 1 + t,
+ data = Data,
+ family = poisson(link = "log"),
+ start = c(log(5),0.5),
+ control = list(maxit = 50,
+ trace = T))
+ xnew <- seq(1,13,
+ length = 100)
+ ypred <- predict(glm_fit_poisson, newdata = data.frame(t = xnew), type = "response")
+```
+ 
+ **KAI** **Some errors above have been corrected , mainly you used `x` instead of `t` jus be careful when copying and pasting code across**
+ 
+```{r}
+ 
+data_pred_poisson <- data.frame(x = xnew, y = ypred)
+ 
+data_poisson_plot <-
+ Data %>%
+   ggplot(aes(x = tdat,
+   y = y)) +
+   geom_point() +
+   labs(x = "x",
+   y = "y")
+  
+ggplot(Data, aes(t,y)) + geom_point() +
+ geom_line(aes(x, y, col = "Maximum likelihood fit"), data = data_pred_poisson) +
+scale_color_manual("", values = c(`Maximum likelihood fit`= "red")) +theme(legend.position = "top")
+
+## appears to be a good fit for the data
+```
+
+**KAI: In the coursework you will not be allowed to use commands like `glm` so better to see the solutions to check how it is done manually from scratch using optimistion, gradients , hessians etc**
+
+## Question 4
+
+In the lectures we will introduce the following asymptotic approximation for the sampling distribution of the maximum likelihood estimator 
+
+$$
+\widehat{\boldsymbol{\theta}}\sim N(\boldsymbol{\theta}^*,[\nabla_{\!\boldsymbol{\theta}}^2 \phi(\widehat{\boldsymbol{\theta}}|\boldsymbol{y})]^{-1})
+$$
+where $\phi$ is the negative loglikelihood. The approximation  is valid when the sample size $n$ is large.  Use this result to compute (separately) asymptotic 95\% confidence intervals for the true values of $\theta^*_1$ and  of $\theta^*_2$ (AIDS example) using the output from `optim` or the `BFGS` function.
+
+
+## Solution to Question 4
+
+Your answer here 
+
+```{r}
+## For theta 1, we obtain the variance from the (1,1) entry of the inverse hessian from the BFGS function.
+theta11 <- BFGS(par=c(log(5), 0.5),
+     fn=fn,
+     gr=gr,
+     hess=hess,
+     B=diag(2),
+     t=tdat,
+     y=ydat)$inv_hess[1,1]
+log(5) + sqrt(theta11)*qnorm(0.025, 0, 1)
+log(5) + sqrt(theta11)*qnorm(0.975, 0, 1)
+## 95% confidence interval for theta(1) is 1.456134 < theta(1) < 1.762742
+
+## For theta 2 we obtain the variance from the (2,2) entry of the inverse hessian from the BFGS function.
+theta22 <- BFGS(par=c(log(5), 0.5),
+     fn=fn,
+     gr=gr,
+     hess=hess,
+     B=diag(2),
+     t=tdat,
+     y=ydat)$inv_hess[2,2]
+0.5 + sqrt(theta22)*qnorm(0.025, 0, 1)
+0.5 + sqrt(theta22)*qnorm(0.975, 0, 1)
+## 95% confidence interval for theta(1) is 0.4847756 < theta(1) < 0.5152244
+```
+
+
+**KAI Above intervals are incorrect, below is the correct code and intervals**
+
+```{r}
+opt11<- BFGS(par=c(log(5), 0.5),
+     fn=fn,
+     gr=gr,
+     hess=hess,
+     B=diag(2),
+     t=tdat,
+     y=ydat)
+
+c(opt11$par[1]-qnorm(0.975, 0, 1)*sqrt(opt11$inv_hess[1,1]),
+opt11$par[1]+qnorm(0.975, 0, 1)*sqrt(opt11$inv_hess[1,1]))
+
+c(opt11$par[2]-qnorm(0.975, 0, 1)*sqrt(opt11$inv_hess[2,2]),
+opt11$par[2]+qnorm(0.975, 0, 1)*sqrt(opt11$inv_hess[2,2]))
+
+```
+
+
+## Question 5
+
+ A  more general model is when the expected value of the number of AIDS cases is modelled as $\mu_i = \exp(\theta^*_1+\theta^*_2\,t_i+\theta^*_3\,t_i^2)$. Replicate the results so far for this new model using the initial approximation $\boldsymbol{\theta}_0=(\log(5),0.5,0)^T$. Test the null hypothesis that $\theta_3=0$ with a significance level  $\alpha=0.05$. Also, find a 95\% asymptotic confidence interval for the expected number of AIDS cases after 15 years from 1980.
+
+## Solution to Question 5
+
+Your answer here 
+
+```{r}
+## We perform optim with different functions with the new paramter
+nll <- function(theta, data){
+  sum(-data$y*(theta[1]+theta[2]*data$t+theta[3]*(data$t^2))+exp(theta[1]+theta[2]*data$t+theta[3]*(data$t^2))+lgamma(data$y+1))
+  }
+ grad       <- function(theta, data)
+ {
+   g <-rep(NA,3)
+  g[1]<--sum(data$y-exp(theta[1]+theta[2]*data$t+theta[3]*((data$t)^2)))
+  g[2]<--sum(data$y*data$t-data$t*exp(theta[1]+theta[2]*data$t+theta[3]*((data$t)^2)))
+  g[3] <- -sum(data$y*(data$t^2)-((data$t)^2)*exp(theta[1]+theta[2]*data$t+theta[3]*((data$t)^2)))
+  return(g=g)
+ }
+ 
+ opt5<-optim(par=c(log(5),0.5,0), fn = nll, gr=grad, method="BFGS", control=list(maxit=1000, abstol=1e-5), data = Data, hessian=T)
+ 
+ opt5
+## The MLE estimate is -0.02134628
+ 
+```
+
+**KAI: Correct well done!**
+
+```{r}
+H1 <- optim(par=c(log(5),0.5,0), fn = nll, gr=grad, method="BFGS", control=list(maxit=1000, abstol=1e-5), data = Data, hessian=T)$hessian
+```
+
+**KAI: NO need to run `optim` again, simply pull it out from the previous optimisation!! see below**
+
+```{r}
+H1
+opt5$hessian
+```
+
+
+```{r}
+
+## invert hessian from optim for variance
+k <- (H1)^(-1)
+sqrt(k[3,3])*qnorm(0.025, 0, 1)
+sqrt(k[3,3])*qnorm(0.975, 0, 1)
+## Since the MLE is less than the lower bound(-0.021 < -0.0004) We conclude that theta3 = 0 is not significant at five percent level
+
+```
+
+**KAI: wrong again! Matrix inversion is with solve not with ^{-1}. see below for the right answer**
+
+```{r}
+K <- solve(H1)
+c(opt5$par[3]- sqrt(K[3,3])*qnorm(0.975, 0, 1),
+opt5$par[3]+sqrt(K[3,3])*qnorm(0.975, 0, 1))
+# KAI does not include zero so we reject null hypothesis
+```
+
+```{r}
+ glm_fit_poisson <- glm(formula = y ~ 1 + t + t^2,
+ data = Data,
+ family = poisson(link = "log"),
+ start = c(log(5),0.5),
+ control = list(maxit = 50,
+ trace = T))
+ xnew <- seq(1,13,
+ length = 100)
+ ypred <- predict(glm_fit_poisson, data.frame(t=15), type = "response")
+
+ ypred
+```
+
+
+**KAI: This is wrong again, have a look at solutions for details!!!!**
